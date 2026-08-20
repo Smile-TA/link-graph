@@ -42,6 +42,10 @@ npm-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# --- agent session state ---
+# loop/scheduler bookkeeping, not project content
+.claude/scheduled_tasks.lock
+
 # --- local scratch ---
 scratch/
 tmp/
