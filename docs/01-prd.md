@@ -406,3 +406,12 @@ by ramped probing of whyaim.com until Wordfence returned 503.
   (The other ~24 are planenroll funnels, rate calculators and APIs — presumed out.)
 - Boilerplate threshold N — start at 60%, tune against real data.
 - Wordfence per-site thresholds — deliberately deferred; learn from crawl telemetry.
+- **Cross-estate link identity.** `normalizeUrl` deliberately applies WordPress path
+  rules only to the site being crawled, so integrity.com's link to
+  `lionstreet.com/about` normalizes without a trailing slash while lionstreet.com's
+  own crawl stores `/about/`. `links.to_url_normalized` therefore will not join to
+  another site's `pages.url_normalized`, and cross-estate blast radius would
+  under-count. Two options, to be decided at step 3/4: re-normalize against the target
+  site at analysis time, or give `normalizeUrl` the registry's known-WordPress host set
+  and let it treat any estate host as permalink space. Surfaced 2026-08-19 by the
+  step-1 corpus.

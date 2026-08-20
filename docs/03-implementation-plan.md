@@ -19,7 +19,7 @@ Prettier, Vitest, `pretest` → lint. `packages/core` exists with `normalizeUrl`
 
 ---
 
-## Step 1 — `core`: URL identity — S
+## Step 1 — `core`: URL identity — S — **done**
 
 **Why first.** PRD §13 names normalization bugs as the risk that manufactures fake
 orphans and fake broken links. Every later number is a function of this one.
@@ -39,11 +39,31 @@ orphans and fake broken links. Every later number is a function of this one.
 - protocol-relative `//host/path`, whitespace and newlines inside `href`
 - `?s=` search URLs and paginated `/page/2/` — normalized, then _classified_ later
 
-**Corpus test.** Build the fixture from `docs/census.json`: sample ~200 real URLs
-across the estate, assert each is idempotent (`f(f(x)) === f(x)`) and that known
-alias pairs collapse. Invented URLs do not count — the bugs live in real ones.
+**Corpus test.** `census.json` holds per-site counts, not URL strings, so the corpus
+was captured from live sitemaps and page HTML instead (`packages/core/test/fixtures`,
+1 req/s, 2026-08-19). Two corpora, two different properties:
 
-**Done when** the corpus passes and `normalizeUrl` is idempotent on every input.
+- **297 canonical sitemap URLs** — normalization must be a **no-op** on every one.
+  This is the test that catches over-eager rules, and it caught two.
+- **371 raw hrefs** from four real homepages — never throws, always idempotent,
+  path always starts with exactly one slash.
+
+Invented URLs do not count; the bugs live in real ones. Both rules that turned out to
+be wrong were found by real data, not by the hand-written cases.
+
+**Outcome on the 371 real hrefs:** 302 unchanged, 51 rewritten (mostly relative →
+absolute), 17 null (10 `mailto:`/`tel:`/`javascript:`, 7 bare fragments).
+
+**Two rules were too broad, and real data caught both:**
+
+- **Trailing slash** was being applied to `/wp-json/` REST routes. Measured: those
+  answer 200 slashed and unslashed and never redirect, so there is no canonical form
+  to converge on. Now restricted to permalink space.
+- **http → https** was being applied to external hosts. Justified for our estate
+  (https-only behind CloudFront), unjustified for anyone else's TLS — and a
+  broken-link report has to show the URL that was actually linked. Now internal only.
+
+**Done.** 42 tests, lint clean.
 
 ---
 
