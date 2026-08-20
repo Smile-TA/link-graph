@@ -139,7 +139,7 @@ the estate is infeasible; HTTP fetching makes it minutes.
 | Concern          | Choice                                                |
 | ---------------- | ----------------------------------------------------- |
 | HTTP             | `undici` — pooling, keep-alive, redirects             |
-| HTML parse       | `cheerio` — `.closest()` gives DOM container per link |
+| HTML parse       | `cheerio` — landmark ancestor walk gives container    |
 | Rate limiting    | `bottleneck` — native per-key limiters, keyed by host |
 | Frontier + state | Postgres table — resume is a `SELECT`                 |
 | robots.txt       | `robots-parser`                                       |
@@ -415,3 +415,18 @@ by ramped probing of whyaim.com until Wordfence returned 503.
   site at analysis time, or give `normalizeUrl` the registry's known-WordPress host set
   and let it treat any estate host as permalink space. Surfaced 2026-08-19 by the
   step-1 corpus.
+
+  **Second facet, measured 2026-08-20:** the trailing slash is not the only split. One
+  page — Integrity's privacy policy — is linked from four estate sites as three
+  distinct identities: `integrity.com/privacy-policy` (×3), `.../privacy-policy/` (×1)
+  and `www.integrity.com/privacy-policy` (×2), while integrity.com's own crawl stores
+  the slashed apex form. So option 2 only works if it also receives the **alias
+  table**, not just the host list.
+
+- **Volatile query parameters mint a new node every crawl.**
+  `tidewatermg.com/wp-login.php?action=logout&_wpnonce=76e5523bda` is a real extracted
+  internal link; `_wpnonce` changes per response. It is not in `url.ts`'s
+  `WP_NOISE_PARAMS` and `/wp-login.php` is not in `WP_INFRA_PATH`. Three candidate
+  homes — a noise param, a registry `ignore_paths` entry, or step 4's Excluded rules —
+  and the choice decides whether `crawl_diffs` (PRD §13) reports churn forever.
+  Deliberately not decided at step 2.

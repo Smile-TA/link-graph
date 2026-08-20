@@ -67,7 +67,7 @@ absolute), 17 null (10 `mailto:`/`tel:`/`javascript:`, 7 bare fragments).
 
 ---
 
-## Step 2 — `core`: link extraction — S
+## Step 2 — `core`: link extraction — S — **done**
 
 Pure `html → links + head signals`. cheerio is a string→DOM parser with no I/O, so
 it belongs in `core` (the one documented exception to §4.1).
@@ -86,7 +86,42 @@ page, one classic-theme page, one `noindex` page, one canonicalized duplicate. W
 already know from the plugin investigation that page builders store content outside
 `post_content` — these fixtures are how we prove the _rendered_ HTML is unaffected.
 
-**Done when** each fixture yields its expected link set and head signals.
+**Done.** 37 tests (79 total), lint clean. `extractPage(html, pageUrl, site)` returns
+`{ links, head }`; entity decoding and `<base href>` resolution live here, as
+`url.ts`'s contract requires.
+
+**DOM position is `container` + `domIndex`, and `container` is the _outermost_ landmark
+ancestor, not the nearest.** Measured on integrity-home: nearest collapses header 25 → 2
+with 23 becoming `nav`, because every theme in this estate writes `<header><nav>` and
+`<footer><nav>` — destroying exactly the distinction a boilerplate finding has to name
+("only linked from the footer"). Outermost keeps `{header, main, footer}`. A closed
+7-value vocabulary also `GROUP BY`s in SQL, which is what step 4 needs to calibrate N;
+a CSS path would not aggregate and would churn on every theme release, breaking step 13.
+
+**A parser, not a regex, and it matters.** A regex over the markup finds 24 `<a href>`
+the parser does not: 14 inside a WS Form JavaScript string, 10 commented out. One of
+those comments is `403bplan.net`'s only homepage link to `/newsletter-signup/` — a page
+that **is** in the sitemap. A text-scraping extractor would report it as linked and hide
+a real orphan.
+
+**Two live defects found by reading real output, not by tests passing:**
+
+- `tidewatermg.com` homepage carries `href="aging02.imgwebhost.com/resources/"` — a
+  staging host with no scheme, so per RFC 3986 it resolves _inside_ the site to
+  `/aging02.imgwebhost.com/resources/`. Near-certain 404 on the live homepage.
+- `403bplan.net/newsletter-signup/` is in the sitemap and its only homepage link is
+  commented out. A genuine orphan candidate, found as a side effect.
+
+**Corrections:** `tidewater-home.html` is the **Bricks** theme (with GenerateBlocks also
+loaded), not GenerateBlocks — the earlier label came from a detection script where the
+last match overwrote the first. PRD §5.0's `.closest()` note was stale and is fixed.
+`.prettierignore` now excludes `pages/`, since Prettier would silently reformat text
+nodes these tests assert on byte-for-byte.
+
+**Left undone, deliberately:** `X-Robots-Tag` is a response header, so it belongs to the
+crawler in step 6; no `alt`/`aria-label` fallback for the 28 of 539 empty anchors (a
+step-12 reporting decision); no foreign-canonical fixture — six probes found only
+self-referential Yoast canonicals, and hunting one needs a broad crawl.
 
 ---
 
