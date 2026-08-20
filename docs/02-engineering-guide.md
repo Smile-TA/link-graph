@@ -137,11 +137,17 @@ Scrapy as fallbacks). In front of it, everything is pure and testable.
 
 ### 4.3 Test tiers
 
-| Tier          | Runs                              | Needs           | Budget           |
-| ------------- | --------------------------------- | --------------- | ---------------- |
-| `unit`        | pure core + injected fakes        | nothing         | < 5s total       |
-| `integration` | one service against real Postgres | docker postgres | < 60s            |
-| `smoke`       | whole compose stack, few tests    | full stack      | manual / nightly |
+| Tier          | Runs                              | Needs                     | Budget           |
+| ------------- | --------------------------------- | ------------------------- | ---------------- |
+| `unit`        | pure core + injected fakes        | nothing                   | < 5s total       |
+| `integration` | one service against real Postgres | docker postgres, + estate | < 60s            |
+| `smoke`       | whole compose stack, few tests    | full stack                | manual / nightly |
+
+**One integration test reaches the live estate**, and it is deliberate: step 5's
+`resolveTruthSource` is a claim about how 165 real WordPress hosts answer, and the plan
+requires one test against them (`packages/truth/src/resolve.int.test.ts` — 11 requests at
+1 req/s across three hosts, ~10s). Everything else in the tier needs only Postgres. Said
+here because §5.1 below is the record of what a documented command actually needs.
 
 **Every service must have a test entry point that runs without any other service.**
 The crawler is testable without the API. The API is testable without the crawler —
@@ -180,7 +186,8 @@ class of bug we have.
 npm run lint              tsc --noEmit && eslint .    # types are part of linting
 npm run format            prettier --write .
 npm test                  unit tier — needs nothing
-npm run test:integration  needs `docker compose up -d --wait`
+npm run test:integration  needs `docker compose up -d --wait` and, for one file, the
+                          live estate (see §4.3)
 ```
 
 `pretest` runs `lint`, matching pw-template: a type or lint error fails before a

@@ -213,6 +213,14 @@ export function build403bplanCrawl(options: Build403bplanOptions = {}): FixtureC
       status: "complete",
       startedAt: "2026-08-20T09:07:45.000Z",
       finishedAt: "2026-08-20T09:08:15.000Z",
+      // The whole inventory, so this crawl covers 100% of it — which is what makes it
+      // the one fixture `analyse`'s coverage refusal (step 5) must accept. Measured
+      // 2026-08-20: `page-sitemap.xml` lists 13 URLs and WP REST reports
+      // `X-WP-Total: 13` for `pages` and 0 for `posts`, so the two sources agree
+      // exactly. Only the sitemap count is recorded, because the sitemap is the source
+      // the capture was taken from.
+      truthSourceUrls: 13,
+      truthSourceSitemapUrls: 13,
     },
     pages,
     links,

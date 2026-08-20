@@ -1,0 +1,11 @@
+{
+  "name": "@link-graph/truth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@link-graph/core": "*",
+    "cheerio": "^1.2.0"
+  }
+}

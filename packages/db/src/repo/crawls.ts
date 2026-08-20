@@ -24,6 +24,19 @@ export interface CrawlInput {
   readonly registrySha: string | null;
   readonly pagesSeen: number;
   readonly wasThrottled: boolean;
+  /**
+   * How large the truth source was when this crawl was seeded (step 5, `006`).
+   *
+   * Required and nullable, like every other nullable column here: `null` is the honest
+   * value for a crawl nobody resolved a truth source for, and a caller that may omit the
+   * field is a caller that can forget the inventory size, compile clean, and only find
+   * out when `analyse` refuses much later. The three counts are the union, WP REST alone
+   * and the sitemap alone; see `006_truth_source.sql` for why `sitemap-invisible` is
+   * arithmetic over them rather than a fourth column.
+   */
+  readonly truthSourceUrls: number | null;
+  readonly truthSourceRestUrls: number | null;
+  readonly truthSourceSitemapUrls: number | null;
 }
 
 export interface CrawlRow extends CrawlInput {
@@ -33,13 +46,16 @@ export interface CrawlRow extends CrawlInput {
 const COLUMNS = `id, site_id AS "siteId", env, started_at AS "startedAt",
   finished_at AS "finishedAt", status, deployed_tag AS "deployedTag",
   registry_sha AS "registrySha", pages_seen AS "pagesSeen",
-  was_throttled AS "wasThrottled"`;
+  was_throttled AS "wasThrottled", truth_source_urls AS "truthSourceUrls",
+  truth_source_rest_urls AS "truthSourceRestUrls",
+  truth_source_sitemap_urls AS "truthSourceSitemapUrls"`;
 
 export async function insertCrawl(db: Queryable, crawl: CrawlInput): Promise<CrawlRow> {
   const { rows } = await db.query<CrawlRow>(
     `INSERT INTO crawls (site_id, env, started_at, finished_at, status, deployed_tag,
-                         registry_sha, pages_seen, was_throttled)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                         registry_sha, pages_seen, was_throttled, truth_source_urls,
+                         truth_source_rest_urls, truth_source_sitemap_urls)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING ${COLUMNS}`,
     [
       crawl.siteId,
@@ -51,6 +67,9 @@ export async function insertCrawl(db: Queryable, crawl: CrawlInput): Promise<Cra
       crawl.registrySha,
       crawl.pagesSeen,
       crawl.wasThrottled,
+      crawl.truthSourceUrls,
+      crawl.truthSourceRestUrls,
+      crawl.truthSourceSitemapUrls,
     ],
   );
   const row = rows[0];

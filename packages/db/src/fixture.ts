@@ -49,9 +49,11 @@ import { Fields, fail, object } from "./json-fields.js";
 import { withTransaction } from "./pool.js";
 import {
   upsertSite,
+  isInventory,
   CRAWLER_MODES,
   TRUTH_SOURCES,
   type SiteInput,
+  type TruthSource,
 } from "./repo/sites.js";
 import {
   insertCrawl,
@@ -93,6 +95,10 @@ export interface FixtureLink extends Omit<LinkInput, "fromPageId" | "toPageId"> 
 export interface FixtureCrawl {
   readonly env: CrawlEnv;
   readonly status: CrawlStatus;
+  /** How large the truth source was (step 5). Null when none was resolved. */
+  readonly truthSourceUrls: number | null;
+  readonly truthSourceRestUrls: number | null;
+  readonly truthSourceSitemapUrls: number | null;
   /** `null` means "use the clock injected into `loadFixture`". */
   readonly startedAt: Date | null;
   readonly finishedAt: Date | null;
@@ -154,7 +160,7 @@ export function parseCrawlFixture(json: unknown): CrawlFixture {
   const root = new Fields(object(json, "root"), "root");
   const site = parseSite(root.obj("site"));
   const hosts: SiteHosts = { canonicalHost: site.canonicalHost, aliases: site.aliases };
-  const crawl = parseCrawl(root.obj("crawl"));
+  const crawl = parseCrawl(root.obj("crawl"), site.truthSource);
   const pages = parsePages(root.array("pages"), hosts);
   const links = parseLinks(root.array("links"), hosts, pages);
   root.done();
@@ -190,9 +196,28 @@ function parseSite(raw: Record<string, unknown>): SiteInput {
   return site;
 }
 
-function parseCrawl(raw: Record<string, unknown>): FixtureCrawl {
+/**
+ * The crawl row, including how large the truth source was.
+ *
+ * The three counts are cross-checked against `site.truthSource` and against each other,
+ * mirroring the CHECKs in `006_truth_source.sql` so that a wrong fixture fails with the
+ * fixture named rather than at INSERT time. What they exist for: without them a
+ * one-page crawl of a 1,953-URL site loads happily and `analyse` reports `orphans: 0`,
+ * which reads as a clean bill of health (engineering guide §1).
+ */
+function parseCrawl(
+  raw: Record<string, unknown>,
+  truthSource: TruthSource | null,
+): FixtureCrawl {
   const f = new Fields(raw, "crawl");
+  const counts = {
+    truthSourceUrls: f.optInt("truthSourceUrls"),
+    truthSourceRestUrls: f.optInt("truthSourceRestUrls"),
+    truthSourceSitemapUrls: f.optInt("truthSourceSitemapUrls"),
+  };
+  checkTruthSourceCounts(counts, truthSource);
   const crawl: FixtureCrawl = {
+    ...counts,
     // Phase 1 is prod-only (PRD §8), so 'prod' is a decision already made rather
     // than a default that hides one.
     env: f.optOneOf("env", CRAWL_ENVS, "prod"),
@@ -205,6 +230,56 @@ function parseCrawl(raw: Record<string, unknown>): FixtureCrawl {
   };
   f.done();
   return crawl;
+}
+
+interface TruthSourceCounts {
+  readonly truthSourceUrls: number | null;
+  readonly truthSourceRestUrls: number | null;
+  readonly truthSourceSitemapUrls: number | null;
+}
+
+function checkTruthSourceCounts(
+  counts: TruthSourceCounts,
+  truthSource: TruthSource | null,
+): void {
+  const { truthSourceUrls: total, truthSourceRestUrls: rest } = counts;
+  const sitemap = counts.truthSourceSitemapUrls;
+  if (
+    !isInventory(truthSource) &&
+    (total !== null || rest !== null || sitemap !== null)
+  ) {
+    fail(
+      "crawl",
+      `truthSourceUrls is set but the site's truthSource is ` +
+        `${truthSource ?? "null"}: a site with no inventory cannot have a size for it`,
+    );
+  }
+  if (total === null && (rest !== null || sitemap !== null)) {
+    fail("crawl", `truthSourceUrls is required when either per-source count is given`);
+  }
+  if (total === null) return;
+  if (rest === null && sitemap === null) {
+    fail(
+      "crawl",
+      `truthSourceUrls is ${total} but neither truthSourceRestUrls nor ` +
+        `truthSourceSitemapUrls says which source measured it`,
+    );
+  }
+  for (const [key, value] of Object.entries(counts)) {
+    if (value !== null && value <= 0) {
+      fail("crawl", `${key} is ${value}: an inventory of nothing is not an inventory`);
+    }
+  }
+  // The union of the two sources: at least as large as either, at most their sum.
+  const largest = Math.max(rest ?? 0, sitemap ?? 0);
+  const sum = (rest ?? 0) + (sitemap ?? 0);
+  if (total < largest || total > sum) {
+    fail(
+      "crawl",
+      `truthSourceUrls ${total} is not a union of rest ${rest ?? "null"} and sitemap ` +
+        `${sitemap ?? "null"}: it must be between ${largest} and ${sum}`,
+    );
+  }
 }
 
 /**
@@ -346,6 +421,9 @@ export async function loadFixture(
       // pages_seen; accepting a separate number would let the two disagree.
       pagesSeen: fixture.pages.length,
       wasThrottled: fixture.crawl.wasThrottled,
+      truthSourceUrls: fixture.crawl.truthSourceUrls,
+      truthSourceRestUrls: fixture.crawl.truthSourceRestUrls,
+      truthSourceSitemapUrls: fixture.crawl.truthSourceSitemapUrls,
     });
 
     const inserted = await insertPages(tx, crawl.id, fixture.pages);

@@ -9,6 +9,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  CAPTURE_SITES,
+  captureCrawlJson,
   createTempDatabase,
   findCrawlMetrics,
   listLinks,
@@ -36,6 +38,21 @@ afterAll(async () => {
 });
 
 const short = (url: string) => url.replace("https://403bplan.net", "") || "/";
+
+/**
+ * The same crawl with the truth-source size stripped. The fixture contract refuses a
+ * size on a site with no truth source, so every test that changes `truthSource` has to
+ * drop the counts with it.
+ */
+const withoutTruthSourceSize = (json: FixtureCrawlJson): FixtureCrawlJson => {
+  // The three counts removed, everything else kept: a whitelist here would silently
+  // stop exercising whatever crawl field is added next.
+  const crawl = { ...json.crawl };
+  delete crawl["truthSourceUrls"];
+  delete crawl["truthSourceRestUrls"];
+  delete crawl["truthSourceSitemapUrls"];
+  return { ...json, crawl };
+};
 
 async function load(json: FixtureCrawlJson): Promise<number> {
   return (await loadFixture(db.pool, parseCrawlFixture(json))).crawlId;
@@ -327,6 +344,127 @@ describe("planted anomalies: one edge removed, one class flipped", () => {
   });
 });
 
+/**
+ * **The §1 hole step 4 named, closed with the data that exposed it.**
+ *
+ * Step 3 captured integrity.com's homepage and loaded it as a complete crawl of a site
+ * whose sitemap holds 1,953 URLs. `analyse` reported `orphans: 0` for it — the crawl
+ * fetched 0.05% of the site and the row read as a clean bill of health, which is
+ * engineering guide §1's opening example almost verbatim. Nothing recorded how large the
+ * truth source was, so nothing could tell the difference. Step 5 records it on `crawls`,
+ * and these are the two halves of the refusal.
+ */
+describe("coverage of the truth source", () => {
+  const capture = (siteId: string) => {
+    const site = CAPTURE_SITES.find((s) => s.siteId === siteId);
+    if (site === undefined) throw new Error(`no capture site ${siteId}`);
+    return captureCrawlJson(site);
+  };
+
+  it("refuses a one-page crawl of a 1,953-URL site instead of reporting zero orphans", async () => {
+    const crawlId = await load(capture("integrity-com") as FixtureCrawlJson);
+    await expect(analyse(db.pool, crawlId)).rejects.toThrow(
+      /page rows for 1 of the 1953 URL\(s\) in its truth source \(0\.051%/,
+    );
+    expect(await findCrawlMetrics(db.pool, crawlId)).toBeNull();
+    expect(Object.values(await classes(crawlId)).every((c) => c === null)).toBe(true);
+  });
+
+  it("refuses every one of the four step-3 captures, for the same reason", async () => {
+    for (const site of CAPTURE_SITES) {
+      const crawlId = await load(captureCrawlJson(site) as FixtureCrawlJson);
+      await expect(analyse(db.pool, crawlId)).rejects.toThrow(/in its truth source/);
+    }
+  });
+
+  it("accepts the full 403bplan.net crawl, which covers 13 of 13", async () => {
+    const metrics = await analyse(db.pool, await load(build403bplanCrawl()));
+    expect(metrics.orphans).toBe(4);
+  });
+
+  /**
+   * The site has an inventory and the crawl does not say how large it was, so what
+   * fraction of the site these numbers describe is unknowable. Unknown must not come out
+   * as a number: this is the state every crawl in the repo was in before step 5.
+   */
+  it("refuses a crawl that never recorded the size of the truth source", async () => {
+    const json = build403bplanCrawl();
+    const crawlId = await load(withoutTruthSourceSize(json));
+    await expect(analyse(db.pool, crawlId)).rejects.toThrow(
+      /records no truth_source_urls/,
+    );
+  });
+
+  it("refuses more truth-source pages than the truth source held", async () => {
+    const json = build403bplanCrawl();
+    const crawlId = await load({
+      ...json,
+      crawl: { ...json.crawl, truthSourceUrls: 12, truthSourceSitemapUrls: 12 },
+    });
+    await expect(analyse(db.pool, crawlId)).rejects.toThrow(
+      /13 page\(s\) marked in_truth_source but its truth source held 12/,
+    );
+  });
+
+  it("takes the threshold as a parameter, and refuses one outside (0, 100]", async () => {
+    const json = build403bplanCrawl();
+    // One page of the 13 missing from the crawl is 92.3% coverage: fine at the default
+    // 90, refused at 95. This is the band step 7 has to calibrate.
+    const crawlId = await load({
+      ...json,
+      crawl: { ...json.crawl, truthSourceUrls: 14, truthSourceSitemapUrls: 14 },
+    });
+    expect((await analyse(db.pool, crawlId)).orphans).toBe(4);
+    await expect(
+      analyse(db.pool, crawlId, { minTruthSourceCoveragePct: 95 }),
+    ).rejects.toThrow(/92\.9%, below the required 95%/);
+    await expect(
+      analyse(db.pool, crawlId, { minTruthSourceCoveragePct: 0 }),
+    ).rejects.toThrow(/\(0, 100\]/);
+  });
+
+  /**
+   * A site with no inventory has nothing to be covered, so the check does not apply —
+   * and `orphans` is NULL rather than 0 for it, which is the other half of the same rule
+   * (PRD §2, Undetectable).
+   */
+  it("does not apply to a site with no truth source", async () => {
+    const json = build403bplanCrawl();
+    const metrics = await analyse(
+      db.pool,
+      await load({
+        ...withoutTruthSourceSize(json),
+        site: { ...json.site, siteId: "403bplan-net-none", truthSource: "none" },
+      }),
+    );
+    expect(metrics.orphans).toBeNull();
+    expect(metrics.undetectable).toBe(12);
+  });
+
+  /**
+   * `unreachable` is step 5's fourth `truth_source` value, for the hosts that never
+   * answer while holding live configs (PRD §3.1). It must behave like "no inventory" and
+   * not like one: the exclusion-shaped `hasTruthSource` would have reported orphans for
+   * a site nobody could reach.
+   */
+  it("treats truth_source = 'unreachable' as no inventory, not as one", async () => {
+    const json = build403bplanCrawl();
+    const metrics = await analyse(
+      db.pool,
+      await load({
+        ...withoutTruthSourceSize(json),
+        site: {
+          ...json.site,
+          siteId: "403bplan-net-unreachable",
+          truthSource: "unreachable",
+        },
+      }),
+    );
+    expect(metrics.orphans).toBeNull();
+    expect(metrics.undetectable).toBe(12);
+  });
+});
+
 /** Engineering guide §1: every one of these must be loud rather than a plausible zero. */
 describe("refusals", () => {
   it("refuses to produce metrics for a partial crawl", async () => {
@@ -426,7 +564,7 @@ describe("a site with no truth source", () => {
   it("reports undetectable coverage and null orphan counts", async () => {
     const json = build403bplanCrawl({ includeSearchPage: true });
     const crawlId = await load({
-      ...json,
+      ...withoutTruthSourceSize(json),
       site: { ...json.site, siteId: "403bplan-net-no-truth", truthSource: "none" },
       pages: json.pages.map((p) => ({ ...p, inTruthSource: false })),
     });

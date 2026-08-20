@@ -26,6 +26,43 @@ tidewatermg.com 989.
 
 \* exactly 2,000 indicates a truncated sitemap; true count unknown and higher.
 
+**Measured 2026-08-20, and the estate is roughly four times the size recorded above.**
+Step 5 resolved `agent.familyfirstlife.com` properly and the 2,000 is **not a truncated
+sitemap — it is a truncated census**. `/sitemap.xml` 301s to `/wp-sitemap.xml`, which is
+a WP-core sitemap **index listing 30 children**; child 1 holds exactly 2,000 URLs (WP
+core's per-file cap) and child 30 holds the remaining 1,363. Children 2–29 were not
+fetched, so 29 × 2,000 + 1,363 = **59,363 URLs** is inference from the cap — but it is
+inference the other source confirms exactly (re-verified independently 2026-08-20: 30 children, child 30 holds 1,363 `<loc>`, and 29 × 2,000 + 1,363 matches `X-WP-Total` to the unit): WP REST reports `X-WP-Total: 59363` for the
+same post type. The census recorded one child (`children: 1`).
+
+Consequences, none of them decided here:
+
+- The 18,531 total becomes ≈ **75,894** with this one host corrected, and that host alone
+  is then **78%** of the estate. "The ten largest sites hold 73%" and "median 27" need
+  recomputing, and other hosts may be truncated the same way — `children` in
+  `census.json` is 1 for several sitemapped hosts.
+- §7's retention ballpark (1.5M link rows per estate crawl) is low by roughly the same
+  factor: 59,363 pages at the ~50 links/page measured in step 3 is ~3M rows from one
+  site.
+- §5.1's "8–16 concurrent sites keeps a full estate sweep near an hour" cannot hold:
+  59,363 pages at 1 req/s is **16.5 hours** for that host, and the limit is per host, so
+  concurrency does not help it. This host needs its own answer (rate override, or
+  crawling agent pages on a different cadence).
+- **A re-census is the user's call**, not step 5's: it is 165 hosts of requests.
+
+Two further census facts, measured the same day: `integrity.com` — the site every
+document here argues from — **is not in `census.json` at all**, because
+`apps/integrity.com/envs/prod/values.yaml` sets `ingress.enabled: false` and declares no
+hostname, so the derivation in §3 cannot see it. It serves fine. That is the inverse of
+§3.1's drift (deployed but unmonitored): **served but not registered**, and it is what
+§3's curation overlay is for. And `tidewatermg.com`'s sitemap index has **34** children,
+where the census records 33.
+
+`census.json` also cannot reproduce the 95/10/47/12 split in the table above: its rows
+carry only `urls`, `children` and `via`, so the 70 hosts with no sitemap are one
+undifferentiated group. §14 says the sitemap-less hosts were then probed for
+`/wp-json/wp/v2/types`; that probe's output is not in the file.
+
 **Coverage is per-capability, not per-site.** Sites without a truth source can be
 checked for broken links and structure but can never have orphans detected, because
 orphan detection is a set difference against a known inventory. The PRD must never
@@ -148,6 +185,38 @@ sees a twentieth of the site. tidewatermg.com carries 15 content post types.
 REST and sitemap disagree in both directions and the disagreement is itself a
 finding: integrity.com exposes `promotion` (5) and `webinar` (10) via REST that are
 absent from its sitemap.
+
+**Measured 2026-08-20 (step 5), and the two numbers above come from different sources.**
+`page-sitemap.xml` lists 96 URLs; WP REST reports `X-WP-Total: 124` for the same `page`
+post type, and the 96 are a strict subset of the 124. So **28 published pages are in the
+CMS and absent from the sitemap** — `sitemap-invisible` in §2, with a population. Spot-checked live on 2026-08-20 and not recorded as fixtures (they are page HTML, not truth-source responses): `/news/` returns 200, is self-canonical and carries no robots `noindex` or `X-Robots-Tag`, so this is §2's "SEO plugin misconfiguration" rather than intent. `promotion` and `webinar` have
+no sitemap child at all (14 children, neither among them), and their permalinks redirect
+(`/promotion/august-1-31/` → 301 → `/leadcenter/leadcenter-promotions-updated-weekly/`),
+which §2 already classifies Excluded once crawled.
+
+tidewatermg.com's "15 content post types" is the count of **post-type children in the
+sitemap index**. REST declares 32 types there, of which 23 are not WordPress's own, and
+**8 of those 23 have no sitemap child**: `landing-pages`, `legal`,
+`leadcenter-promotion`, `fcrm-dummy`, and the four `gblocks_*` builder types this section
+wants classified Excluded. `bricks_template` runs the other way — it has its own sitemap
+child and no REST type at all — as do the 18 taxonomy and author children.
+
+**Two rules that cannot be implemented, and one that can.** `/wp/v2/types` does **not**
+carry `viewable` unauthenticated (it is an `edit`-context field), so "enumerate the
+viewable types" is impossible; and `/wp/v2/blocks` answers `200 []` while `menu-items`
+and `templates` answer 401, so "the internal types are the ones that refuse" is
+impossible too. What remains is a list of WordPress's own nine non-content types, the
+same nine on every site measured (11 types on 403bplan.net, 32 on tidewatermg.com).
+`attachment` is one of them: `X-WP-Total` puts it at **4,681 items on integrity.com**,
+more than twice that site's sitemap, and the one item sampled is `status: inherit` (an
+attachment inherits its parent's status) with an attachment-page permalink. No sitemap in
+the estate lists any of them.
+
+**Every reachable WordPress host probed exposes WP REST — 7 of 7**: 403bplan.net,
+integrity.com, tidewatermg.com, agent.familyfirstlife.com, agentcore.com,
+myagentresourcecenter.com and ifcnationalmarketing.com (the first four are recorded as
+fixtures in `packages/truth`; the last three were single live probes). So resolution step 2 (sitemap) may have no live cohort member as a
+_primary_ source; its value on this estate is the cross-check, not the fallback.
 
 **Classification runs on the truth source before anything else.** Drop page-builder
 artifacts (`bricks_template`, `gblocks_*`), taxonomy archives, author archives and

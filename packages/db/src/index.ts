@@ -6,6 +6,12 @@ export { createPool, withTransaction } from "./pool.js";
 // declared.
 export { createTempDatabase } from "./testing/temp-database.js";
 export type { TempDatabase } from "./testing/temp-database.js";
+// Same reason, for the same consumer: `analyse.int.test.ts` asserts that a crawl of one
+// page of integrity.com's ~2,000 is refused rather than reported as zero orphans, and
+// these captures are the only real crawl output of a large site that exists before
+// step 6.
+export { CAPTURE_SITES, captureCrawlJson } from "./testing/captures.js";
+export type { Capture, CaptureSite } from "./testing/captures.js";
 export type { Queryable } from "./pool.js";
 export { runMigrations, MIGRATIONS_DIR } from "./migrate.js";
 export type { MigrateOptions } from "./migrate.js";
@@ -21,6 +27,7 @@ export {
   upsertSite,
   findSiteById,
   findSiteBySlug,
+  isInventory,
   CRAWLER_MODES,
   TRUTH_SOURCES,
 } from "./repo/sites.js";
@@ -46,6 +53,7 @@ export type { CrawlMetricsInput } from "./repo/crawl-metrics.js";
 export {
   markBoilerplateLinks,
   countFetchedPages,
+  countTruthSourcePages,
   computePageDepths,
   listPageAnalysisFacts,
   setPageClasses,

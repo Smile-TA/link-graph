@@ -238,6 +238,12 @@ describe("loadFixture: every column, at a non-default value", () => {
       finishedAt: "2026-08-20T09:30:00.000Z",
       deployedTag: "v1.7.0",
       registrySha: "0d1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b",
+      // How large the truth source was (step 5). The three counts here are the shape
+      // measured on integrity.com's `page` post type — REST 124, sitemap 96, union 124
+      // — which is the case that only exists because the two sources disagree.
+      truthSourceUrls: 124,
+      truthSourceRestUrls: 124,
+      truthSourceSitemapUrls: 96,
       wasThrottled: true,
     },
     pages: [
@@ -304,6 +310,9 @@ describe("loadFixture: every column, at a non-default value", () => {
       registrySha: "0d1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b",
       pagesSeen: 2,
       wasThrottled: true,
+      truthSourceUrls: 124,
+      truthSourceRestUrls: 124,
+      truthSourceSitemapUrls: 96,
     });
   });
 

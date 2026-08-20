@@ -16,6 +16,7 @@ import type { Pool } from "pg";
 import {
   countAnalysedLinks,
   countFetchedPages,
+  countTruthSourcePages,
   computePageDepths,
   findCrawl,
   findPageByUrl,
@@ -34,6 +35,10 @@ import {
   type PageClass,
   type SiteRules,
 } from "./classify.js";
+import {
+  DEFAULT_MIN_TRUTH_SOURCE_COVERAGE_PCT,
+  truthSourceCoverageProblem,
+} from "./coverage.js";
 
 export interface AnalyseOptions {
   /**
@@ -47,6 +52,12 @@ export interface AnalyseOptions {
    * real crawl.
    */
   readonly boilerplateThresholdPct?: number;
+  /**
+   * The share of the truth source a crawl must have page rows for before its orphan
+   * counts mean anything. Default 90, and a parameter because no measurement pins it —
+   * see `coverage.ts`, which holds both the rule and the reasoning.
+   */
+  readonly minTruthSourceCoveragePct?: number;
 }
 
 const DEFAULT_BOILERPLATE_THRESHOLD_PCT = 60;
@@ -56,13 +67,16 @@ export async function analyse(
   crawlId: number,
   options: AnalyseOptions = {},
 ): Promise<CrawlMetricsInput> {
-  const thresholdPct =
-    options.boilerplateThresholdPct ?? DEFAULT_BOILERPLATE_THRESHOLD_PCT;
-  if (!(thresholdPct > 0 && thresholdPct <= 100)) {
-    throw new Error(
-      `analyse: boilerplateThresholdPct must be in (0, 100], got ${thresholdPct}`,
-    );
-  }
+  const thresholdPct = percentage(
+    "boilerplateThresholdPct",
+    options.boilerplateThresholdPct,
+    DEFAULT_BOILERPLATE_THRESHOLD_PCT,
+  );
+  const coveragePct = percentage(
+    "minTruthSourceCoveragePct",
+    options.minTruthSourceCoveragePct,
+    DEFAULT_MIN_TRUTH_SOURCE_COVERAGE_PCT,
+  );
 
   const crawl = await findCrawl(pool, crawlId);
   if (crawl === null) throw new Error(`analyse: no crawl ${crawlId}`);
@@ -96,6 +110,14 @@ export async function analyse(
     truthSource: site.truthSource,
     ignorePaths: site.ignorePaths,
   };
+  if (hasTruthSource(siteRules)) {
+    const problem = truthSourceCoverageProblem(
+      await countTruthSourcePages(pool, crawlId),
+      crawl.truthSourceUrls,
+      coveragePct,
+    );
+    if (problem !== null) throw new Error(`analyse: crawl ${crawlId} — ${problem}`);
+  }
 
   return withTransaction(pool, async (tx) => {
     const root = await findPageByUrl(tx, crawlId, homeUrl);
@@ -182,6 +204,15 @@ export async function analyse(
     await upsertCrawlMetrics(tx, metrics);
     return metrics;
   });
+}
+
+/** An option that is a percentage, validated once for every option that is one. */
+function percentage(name: string, value: number | undefined, fallback: number): number {
+  const pct = value ?? fallback;
+  if (!(pct > 0 && pct <= 100)) {
+    throw new Error(`analyse: ${name} must be in (0, 100], got ${pct}`);
+  }
+  return pct;
 }
 
 /**

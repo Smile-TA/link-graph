@@ -278,7 +278,7 @@ still counts them, since that measures appearances.
 
 ---
 
-## Step 5 — `truth`: the CMS side — M
+## Step 5 — `truth`: the CMS side — M — **done**
 
 |            |                                                                    |
 | ---------- | ------------------------------------------------------------------ |
@@ -300,8 +300,55 @@ Order of preference, per PRD §4:
 `agent.familyfirstlife.com` returns exactly 2,000 sitemap URLs — a truncation
 artifact that only a REST cross-check can catch.
 
-**Done when** the three census cohorts each resolve correctly: a REST site, a
-sitemap-only site, and one of the 47 with neither.
+**Done.** 220 unit + 73 integration tests. `resolveTruthSource(site, deps, opts)` returns
+`{ kind, urls, postTypes, counts, findings, requests }` over 31 recorded production
+responses, so unit tests never touch the network. `kind` gained a fourth value,
+**`unreachable`** — a throttled or dead host must never be filed as "no truth source",
+because those are different facts with different remedies.
+
+**It found that the estate is ~4× its recorded size.** See PRD §1. `census.json` recorded
+2,000 URLs for `agent.familyfirstlife.com`; the real figure is **59,363**, verified two
+independent ways. That one host is then 78% of the estate.
+
+**The §1 hole from step 4 is closed.** New migration `006_truth_source.sql` stores the
+inventory size on `crawls`, and `analyse` refuses a crawl that covers too little of it.
+Verified: all four one-page captures now refuse, integrity.com's saying _"page rows for 1
+of the 1953 URL(s) in its truth source (0.051%)… every count from this crawl understates
+the site"_. The rule is a pure function, unit-tested with no database.
+
+Coverage threshold is **90 and a parameter, not a measured constant** — the only complete
+crawl in existence is 13/13, and the failure being caught is 1/1953. Recalibrate at
+step 7.
+
+**`sitemap-invisible` is answered as arithmetic, not a column.** `|REST \ sitemap|` falls
+out of three stored counts, so nothing can drift, and the answer is NULL rather than 0
+when only one source was read. It deliberately did **not** go into `pages.class`: that
+column answers the orphan question, sitemap-invisibility is an orthogonal axis, and a
+page can be both — so assigning it there would hide an orphan. Measured population: 28
+published pages on integrity.com, one of which (`/news/`) returns 200, self-canonical, no
+`noindex` — §2's misconfiguration case rather than intent.
+
+**The sharpest §1 case found so far:**
+`agent.familyfirstlife.com/wp-sitemap-posts-page-30.xml` answers **HTTP 404 with a valid
+161 KB `<urlset>` of 1,363 real URLs** that REST independently confirms. A status-code-driven
+resolver silently drops 1,363 pages. Hence the rule: **content decides, status is recorded.**
+
+**Two rules that looked obviously right and cannot be implemented:** `viewable` is absent
+from an unauthenticated `/wp/v2/types` (it is `edit`-context only), and `/wp/v2/blocks`
+answers `200 []` while `menu-items` and `templates` answer 401 — so neither "enumerate the
+viewable types" nor "the internal ones refuse" exists. What remains is WordPress's own
+nine non-content types, identical across all four sites measured.
+
+**Every reachable WordPress host probed exposes WP REST — 7 of 7**, including every
+sitemapped one. PRD §4's sitemap-only branch may have no live cohort member as a _primary_
+source; on this estate the sitemap's value is the cross-check. That branch is covered by a
+documented plant, and the test says so.
+
+**Left undone:** `findings` has no persistence sink — the nine degradations are computed and
+returned but nothing stores them, because a findings table is a reporting-layer design
+(step 12/13). No caller yet; step 7's CLI is the seam's first consumer. An unfetched
+`in_truth_source` page still classifies `orphan`, which is now sharper because the coverage
+gate tolerates up to 10% unfetched — that needs a step-4 decision.
 
 ---
 

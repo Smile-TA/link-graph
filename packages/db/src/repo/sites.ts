@@ -6,9 +6,34 @@
  */
 import type { Queryable } from "../pool.js";
 
-/** `null` = not resolved yet; `'none'` = resolved, and there is none (PRD §2). */
-export const TRUTH_SOURCES = ["rest", "sitemap", "none"] as const;
+/**
+ * `null` = not resolved yet; `'none'` = resolved, and there is none (PRD §2);
+ * `'unreachable'` = the host never answered, so nothing was resolved either way.
+ *
+ * The fourth value arrived with step 5 and `006_truth_source.sql`, which explains why:
+ * `agents.integrity.com` has no DNS and `integritymedicarehelpline.com` refuses
+ * connections while both hold live pw-template configs (PRD §3.1), and filing those as
+ * "this site has no inventory" hides a broken deployment behind a content finding.
+ * `hasTruthSource` in packages/analyse tests for 'rest' or 'sitemap' positively, so a
+ * value added here cannot be mistaken for an inventory.
+ */
+export const TRUTH_SOURCES = ["rest", "sitemap", "none", "unreachable"] as const;
 export type TruthSource = (typeof TRUTH_SOURCES)[number];
+
+/**
+ * Whether a `truth_source` value is an inventory to take the orphan set difference
+ * against. It lives beside the vocabulary because two callers need exactly this test —
+ * `analyse`'s `hasTruthSource` and the fixture parser, which refuses an inventory size
+ * on a site that has no inventory — and a predicate with two homes is how they drift.
+ *
+ * Written as a positive test of the two values that ARE an inventory, so that the next
+ * value added to the list above is safe by default: the exclusion form would have
+ * silently called `unreachable` an inventory and reported orphans for a site nobody
+ * could reach.
+ */
+export function isInventory(truthSource: TruthSource | null): boolean {
+  return truthSource === "rest" || truthSource === "sitemap";
+}
 
 /** Playwright is opt-in per site (PRD §5). */
 export const CRAWLER_MODES = ["http", "playwright"] as const;

@@ -12,6 +12,7 @@
  * The vocabulary itself lives beside the column it constrains, in `@link-graph/db`, with
  * `TRUTH_SOURCES` and `CRAWL_STATUSES`.
  */
+import { isInventory } from "@link-graph/db";
 import type { PageClass, TruthSource } from "@link-graph/db";
 
 export type { PageClass };
@@ -47,8 +48,9 @@ export interface PageFacts {
 
 export interface SiteRules {
   /**
-   * `null` = not resolved yet, `'none'` = resolved and there is none. Neither can answer
-   * the orphan question (PRD §2, Undetectable).
+   * `null` = not resolved yet, `'none'` = resolved and there is none, `'unreachable'` =
+   * the host never answered (step 5). None of the three can answer the orphan question
+   * (PRD §2, Undetectable).
    */
   readonly truthSource: TruthSource | null;
   readonly ignorePaths: readonly string[];
@@ -59,7 +61,9 @@ export interface SiteRules {
  * because the metrics assembly needs exactly the same test — the rule has one home.
  */
 export function hasTruthSource(site: SiteRules): boolean {
-  return site.truthSource !== null && site.truthSource !== "none";
+  // The rule itself lives beside the column's vocabulary in `@link-graph/db`, because
+  // the fixture parser needs the same test — see `isInventory`.
+  return isInventory(site.truthSource);
 }
 
 /**

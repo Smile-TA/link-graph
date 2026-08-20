@@ -7,3 +7,6 @@ scratch/
 # silently change what the extraction tests assert (anchor whitespace, entities).
 packages/core/test/fixtures/pages/
 packages/analyse/test/fixtures/
+# Recorded HTTP responses (bodies + the manifest of the URLs they came from). Prettier
+# would reformat the captured XML and JSON, and the tests count entries in them.
+packages/truth/test/fixtures/

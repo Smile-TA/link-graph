@@ -93,6 +93,29 @@ export async function countFetchedPages(db: Queryable, crawlId: number): Promise
 }
 
 /**
+ * Pages of this crawl that the truth source listed **and that the crawl got a response
+ * for** — the numerator of the coverage check `analyse` refuses on (step 5,
+ * `006_truth_source.sql`).
+ *
+ * `${FETCHED}` is load-bearing, and this counted every row regardless of status first.
+ * Gate 2 found what that costs from step 6 onwards: a crawler that seeds its frontier
+ * from the truth source writes a row per inventory URL before fetching anything, so the
+ * ratio would be 1 by construction and the refusal would be vacuous exactly when it
+ * starts to matter. A row with a NULL status_code is a URL whose links are unknown, so
+ * it is not coverage of that URL (`002_crawls.sql` on the column).
+ */
+export async function countTruthSourcePages(
+  db: Queryable,
+  crawlId: number,
+): Promise<number> {
+  const { rows } = await db.query<{ pages: number }>(
+    `SELECT count(*)::int AS pages FROM pages WHERE ${FETCHED} AND in_truth_source`,
+    [crawlId],
+  );
+  return rows[0]?.pages ?? 0;
+}
+
+/**
  * Shortest click depth from the root page over **all** internal links, boilerplate
  * included (implementation plan, step 4: a page in the global nav genuinely is one click
  * deep). Pages with no path from the root keep a NULL depth, which is what

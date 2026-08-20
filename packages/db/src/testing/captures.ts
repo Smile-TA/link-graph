@@ -32,12 +32,30 @@ export interface Capture {
 export interface CaptureSite {
   readonly siteId: string;
   readonly canonicalHost: string;
+  /**
+   * URLs in the site's sitemap — how large the truth source is, against the one or two
+   * pages of it these captures hold.
+   *
+   * This is the number that turns each of these fixtures from "a clean little site with
+   * no orphans" into what it actually is: a token sample. `analyse` refuses a crawl
+   * covering materially less of its truth source than it should (step 5), and
+   * `analyse.int.test.ts` asserts that refusal against the integrity.com capture — one
+   * page of 1,953.
+   *
+   * 403bplan.net (13) and lionstreet.com (55) are from `census.json`; tidewatermg.com
+   * (989) likewise, though its index was measured 2026-08-20 to have 34 children where
+   * the census records 33. integrity.com's 1,953 is PRD §1/§4's figure and was not
+   * re-counted: its index has 14 children, of which only `page-sitemap.xml` (96 URLs)
+   * was fetched.
+   */
+  readonly sitemapUrls: number;
   readonly captures: readonly Capture[];
 }
 
 export const CAPTURE_SITES: readonly CaptureSite[] = [
   {
     siteId: "403bplan-net",
+    sitemapUrls: 13,
     canonicalHost: "403bplan.net",
     captures: [
       {
@@ -58,6 +76,7 @@ export const CAPTURE_SITES: readonly CaptureSite[] = [
   },
   {
     siteId: "integrity-com",
+    sitemapUrls: 1953,
     canonicalHost: "integrity.com",
     captures: [
       {
@@ -70,6 +89,7 @@ export const CAPTURE_SITES: readonly CaptureSite[] = [
   },
   {
     siteId: "lionstreet-com",
+    sitemapUrls: 55,
     canonicalHost: "lionstreet.com",
     captures: [
       {
@@ -82,6 +102,7 @@ export const CAPTURE_SITES: readonly CaptureSite[] = [
   },
   {
     siteId: "tidewatermg-com",
+    sitemapUrls: 989,
     canonicalHost: "tidewatermg.com",
     captures: [
       {
@@ -167,6 +188,8 @@ export function captureCrawlJson(site: CaptureSite): unknown {
       status: "complete",
       startedAt: "2026-08-20T00:00:00.000Z",
       finishedAt: "2026-08-20T00:05:00.000Z",
+      truthSourceUrls: site.sitemapUrls,
+      truthSourceSitemapUrls: site.sitemapUrls,
     },
     pages,
     links,

@@ -14,7 +14,7 @@ import {
   upsertCrawlMetrics,
   type CrawlMetricsInput,
 } from "./repo/crawl-metrics.js";
-import { insertCrawl } from "./repo/crawls.js";
+import { findCrawl, insertCrawl } from "./repo/crawls.js";
 import { findExternalUrl, upsertExternalUrl } from "./repo/external-urls.js";
 import { insertLinks } from "./repo/links.js";
 import { insertRegistryHealth, listRegistryHealth } from "./repo/registry-health.js";
@@ -293,6 +293,63 @@ describe("crawl_metrics", () => {
   });
 });
 
+/**
+ * The CHECK constraints from `006_truth_source.sql`. They duplicate the cross-field
+ * rules in `parseCrawlFixture`, and every other test reaches the table through that
+ * parser — so without this the SQL is never asked to reject anything, and a typo in the
+ * `(total IS NULL) = (both per-source NULL)` biconditional would be invisible.
+ */
+describe("crawls truth-source counts", () => {
+  const crawl = (
+    truthSourceUrls: number | null,
+    truthSourceRestUrls: number | null,
+    truthSourceSitemapUrls: number | null,
+  ) =>
+    insertCrawl(db.pool, {
+      siteId,
+      env: "prod",
+      startedAt: new Date("2026-08-20T09:00:00.000Z"),
+      finishedAt: null,
+      status: "complete",
+      deployedTag: null,
+      registrySha: null,
+      pagesSeen: 0,
+      wasThrottled: false,
+      truthSourceUrls,
+      truthSourceRestUrls,
+      truthSourceSitemapUrls,
+    });
+
+  it("stores a union of the two sources, and reads all three back", async () => {
+    // integrity.com's `page` post type, measured: REST 124, sitemap 96, union 124.
+    const row = await crawl(124, 124, 96);
+    expect(await findCrawl(db.pool, row.id)).toMatchObject({
+      truthSourceUrls: 124,
+      truthSourceRestUrls: 124,
+      truthSourceSitemapUrls: 96,
+    });
+  });
+
+  it("accepts one source alone, and no source at all", async () => {
+    expect((await crawl(13, null, 13)).truthSourceUrls).toBe(13);
+    expect((await crawl(null, null, null)).truthSourceUrls).toBeNull();
+  });
+
+  it("refuses an inventory of nothing", async () => {
+    await expect(crawl(0, null, 0)).rejects.toThrow(/truth_source_urls_positive/);
+  });
+
+  it("refuses a union with no source behind it, and a source with no union", async () => {
+    await expect(crawl(13, null, null)).rejects.toThrow(/counts_agree/);
+    await expect(crawl(null, 13, null)).rejects.toThrow(/counts_agree/);
+  });
+
+  it("refuses a union smaller than a source or larger than their sum", async () => {
+    await expect(crawl(96, 124, 96)).rejects.toThrow(/counts_agree/);
+    await expect(crawl(300, 124, 96)).rejects.toThrow(/counts_agree/);
+  });
+});
+
 describe("crawl_diffs", () => {
   it("records what changed between two crawls, in the right direction", async () => {
     // Two distinct crawl ids, and both read back. With from and to set to the same
@@ -309,6 +366,9 @@ describe("crawl_diffs", () => {
       registrySha: null,
       pagesSeen: 0,
       wasThrottled: false,
+      truthSourceUrls: null,
+      truthSourceRestUrls: null,
+      truthSourceSitemapUrls: null,
     });
     await insertCrawlDiff(db.pool, {
       fromCrawlId: crawlId,

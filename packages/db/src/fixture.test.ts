@@ -339,6 +339,95 @@ describe("parseCrawlFixture: what it refuses", () => {
   });
 });
 
+/**
+ * How large the truth source was (step 5, `006_truth_source.sql`). Without it a crawl of
+ * one page of a 1,953-URL site loads as a complete crawl, and `analyse` reports
+ * `orphans: 0` — engineering guide §1's opening example.
+ */
+describe("parseCrawlFixture: the size of the truth source", () => {
+  const withCrawl = (crawl: Record<string, unknown>) => {
+    const json = validJson();
+    crawlOf(json).truthSourceUrls = crawl["truthSourceUrls"];
+    crawlOf(json).truthSourceRestUrls = crawl["truthSourceRestUrls"];
+    crawlOf(json).truthSourceSitemapUrls = crawl["truthSourceSitemapUrls"];
+    return json;
+  };
+
+  it("defaults all three counts to null, which analyse then refuses to guess at", () => {
+    expect(parseCrawlFixture(validJson()).crawl).toMatchObject({
+      truthSourceUrls: null,
+      truthSourceRestUrls: null,
+      truthSourceSitemapUrls: null,
+    });
+  });
+
+  it("accepts the union with one or both per-source counts", () => {
+    expect(
+      parseCrawlFixture(withCrawl({ truthSourceUrls: 55, truthSourceSitemapUrls: 55 }))
+        .crawl.truthSourceUrls,
+    ).toBe(55);
+    // integrity.com's `page` post type, measured: REST 124, sitemap 96, union 124.
+    expect(
+      parseCrawlFixture(
+        withCrawl({
+          truthSourceUrls: 124,
+          truthSourceRestUrls: 124,
+          truthSourceSitemapUrls: 96,
+        }),
+      ).crawl,
+    ).toMatchObject({
+      truthSourceUrls: 124,
+      truthSourceRestUrls: 124,
+      truthSourceSitemapUrls: 96,
+    });
+  });
+
+  it("refuses a size for a site that has no truth source", () => {
+    const json = withCrawl({ truthSourceUrls: 55, truthSourceSitemapUrls: 55 });
+    (json["site"] as Record<string, unknown>)["truthSource"] = "none";
+    expect(() => parseCrawlFixture(json)).toThrow(/no inventory cannot have a size/);
+  });
+
+  it("refuses a union with no source behind it", () => {
+    expect(() => parseCrawlFixture(withCrawl({ truthSourceUrls: 55 }))).toThrow(
+      /which source measured it/,
+    );
+  });
+
+  it("refuses a per-source count with no union", () => {
+    expect(() => parseCrawlFixture(withCrawl({ truthSourceSitemapUrls: 55 }))).toThrow(
+      /required when either per-source count/,
+    );
+  });
+
+  it("refuses an inventory of nothing", () => {
+    expect(() =>
+      parseCrawlFixture(withCrawl({ truthSourceUrls: 0, truthSourceSitemapUrls: 0 })),
+    ).toThrow(/inventory of nothing/);
+  });
+
+  it("refuses a union that is not one: smaller than a source, or larger than the sum", () => {
+    expect(() =>
+      parseCrawlFixture(
+        withCrawl({
+          truthSourceUrls: 96,
+          truthSourceRestUrls: 124,
+          truthSourceSitemapUrls: 96,
+        }),
+      ),
+    ).toThrow(/must be between 124 and 220/);
+    expect(() =>
+      parseCrawlFixture(
+        withCrawl({
+          truthSourceUrls: 300,
+          truthSourceRestUrls: 124,
+          truthSourceSitemapUrls: 96,
+        }),
+      ),
+    ).toThrow(/must be between 124 and 220/);
+  });
+});
+
 describe("parseCrawlFixture: the alias set is load-bearing", () => {
   /**
    * 145 of 312 prod hostnames are `www.` aliases (PRD §3), and the alias set is what
