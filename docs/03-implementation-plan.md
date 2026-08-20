@@ -108,9 +108,15 @@ a real orphan.
 
 - `tidewatermg.com` homepage carries `href="aging02.imgwebhost.com/resources/"` — a
   staging host with no scheme, so per RFC 3986 it resolves _inside_ the site to
-  `/aging02.imgwebhost.com/resources/`. Near-certain 404 on the live homepage.
+  `/aging02.imgwebhost.com/resources/`. **Measured 2026-08-20, and not the 404 first
+  assumed:** it 301s to `/resources/`, which is 200, while the intended host
+  `aging02.imgwebhost.com` is NXDOMAIN. WordPress's canonical-guess redirect is
+  rescuing a malformed link to a dead staging box — so it costs a hop, breaks if the
+  `resources` slug ever moves, and is invisible to any check that only asks "did this
+  return 200". This is the case PRD §13's redirect-awareness requirement exists for,
+  and a plain status-code crawler would report the page as healthy.
 - `403bplan.net/newsletter-signup/` is in the sitemap and its only homepage link is
-  commented out. A genuine orphan candidate, found as a side effect.
+  commented out. **Verified live 2026-08-20:** present in `page-sitemap.xml`, returns 200. A genuine orphan candidate, found as a side effect.
 
 **Corrections:** `tidewater-home.html` is the **Bricks** theme (with GenerateBlocks also
 loaded), not GenerateBlocks — the earlier label came from a detection script where the
