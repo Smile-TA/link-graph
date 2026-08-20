@@ -131,7 +131,7 @@ self-referential Yoast canonicals, and hunting one needs a broad crawl.
 
 ---
 
-## Step 3 — `db`: schema, migrations, and a fixture loader — M
+## Step 3 — `db`: schema, migrations, and a fixture loader — M — **done**
 
 The first adapter, and the first thing that needs Docker.
 
@@ -154,8 +154,40 @@ Contents:
 - `docker-compose.yml` containing **only Postgres**. The rest of the stack arrives
   when something needs it.
 
-**Done when** `npm run test:integration` brings up Postgres, migrates, loads a
-fixture, and reads it back.
+**Done.** 125 unit tests (no database needed) + 37 integration. Driver is `pg`, no
+ORM. All eight PRD §7 tables, forward-only numbered migrations with sha256 checksums
+that make an applied file immutable. Verified independently: first run applies 4
+migrations, second applies 0.
+
+**`links` carries two columns beyond PRD §7 — `container` and `dom_index` — and real
+data proves `dom_index` is load-bearing, not decorative.** tidewatermg.com's homepage
+links to one Google reviews URL **24 times from 24 distinct DOM positions**. A
+`UNIQUE (crawl_id, from_page_id, to_url_normalized)` key — the obvious schema — would
+have rejected a real production page.
+
+**Measured on all six captures loaded end to end** (`extractPage` → fixture JSON →
+tables): 4 sites, 4 crawls, 6 pages, 539 links, matching step 2's independently derived
+count. `container` uses only **3 of its 7 values** (main 247, header 192, footer 100) —
+step 4 should expect a sparse vocabulary. `depth`, `class` and `is_boilerplate` all load
+as NULL, never a default, so step 4 cannot mistake "not yet computed" for "computed as
+zero".
+
+**`to_page_id IS NULL` is the common case, not the exception:** only **13 of 452**
+internal edges resolve to a page in their own crawl, because 267 distinct internal
+targets are uncrawled when the only crawled page is the homepage. Step 4's orphan maths
+has to treat an unresolved target as "unknown", never as "missing".
+
+**The fixture loader refuses rather than coerces.** Every URL must already be a
+`normalizeUrl` fixed point; `path` and `isExternal` are derived and cannot be supplied;
+unknown JSON keys are rejected. That is what makes it safe as step 4's and step 11's
+only input.
+
+**Flagged for later, deliberately not built:** no `pool.on("error")` handler and no
+advisory lock in the migration runner — both verified to fail loudly rather than
+silently, and both belong with step 10's worker concurrency. `crawl_metrics` cannot yet
+express PRD §2's "undetectable" class; recorded as a comment in `004_metrics.sql` for
+step 4. The pure derivation rules inside `parseCrawlFixture` are rules the crawler must
+apply identically — they belong in `core` before step 6, or node identity splits.
 
 ---
 

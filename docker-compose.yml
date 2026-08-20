@@ -1,0 +1,42 @@
+# Postgres only, on purpose. Redis and the workers arrive at step 10, the API at
+# step 11 and Astro at step 12 — infrastructure arrives when something needs it
+# (implementation plan, ordering rule 3).
+#
+#   docker compose up -d --wait     then  npm run test:integration
+#
+# `--wait` is not optional. Measured 2026-08-20 on a fresh volume: for ~1.5s after
+# the container starts, the published port accepts the TCP connection (docker's port
+# proxy) and then resets it, because the entrypoint runs initdb against a unix socket
+# only (`-c listen_addresses=''`). Without `--wait` the first integration run in a
+# new checkout fails on a database that is about to work.
+#
+# The credentials below are a local container's and are deliberately not
+# parameterized: packages/db falls back to exactly this DSN when DATABASE_URL is
+# unset, and an override here that the fallback could not see would point the
+# integration suite at a different server while it stayed green.
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: link_graph
+      POSTGRES_PASSWORD: link_graph
+      POSTGRES_DB: link_graph
+    ports:
+      - "5432:5432"
+    volumes:
+      # A named volume, not a bind mount: measured, the official image sets
+      # PGDATA=/var/lib/postgresql/18/docker and declares /var/lib/postgresql as its
+      # volume, so a host path pinned to one layout breaks on a major upgrade.
+      # `docker compose down -v` is the reset.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      # `-h localhost` on purpose: with no host, pg_isready probes the unix socket —
+      # which is the socket initdb's temporary server is already serving, so the
+      # container can report healthy while a TCP client still gets ECONNRESET.
+      test: ["CMD-SHELL", "pg_isready -h localhost -U link_graph -d link_graph"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:

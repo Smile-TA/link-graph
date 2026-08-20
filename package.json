@@ -10,8 +10,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "pretest": "npm run lint",
-    "test": "vitest run --exclude '**/*.int.test.ts' --exclude '**/node_modules/**'",
-    "test:integration": "vitest run --include '**/*.int.test.ts'"
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",

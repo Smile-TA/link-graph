@@ -177,14 +177,25 @@ class of bug we have.
 ### 5.1 Commands
 
 ```
-npm run lint        tsc --noEmit && eslint .      # types are part of linting
-npm run format      prettier --write .
-npm test            vitest run unit
-npm run test:integration
+npm run lint              tsc --noEmit && eslint .    # types are part of linting
+npm run format            prettier --write .
+npm test                  unit tier — needs nothing
+npm run test:integration  needs `docker compose up -d --wait`
 ```
 
 `pretest` runs `lint`, matching pw-template: a type or lint error fails before a
 single test executes.
+
+**Each tier is a config file, not a CLI filter.** `test:integration` was originally
+written as `vitest run --include '**/*.int.test.ts'`. Vitest 2 has no `--include`
+flag, so the command died with `CACError: Unknown option --include` from the first
+commit until step 3 — a documented command that had never once been run. The tiers now
+come from `vitest.config.ts` and `vitest.integration.config.ts`.
+
+**The integration tier must fail, never skip.** Verified with Postgres stopped:
+`npm test` passes 125 tests, `npm run test:integration` exits 1 with `ECONNREFUSED`
+and a message naming the fix. A suite that skips when its dependency is missing is
+§1's bug wearing a green tick.
 
 ---
 
