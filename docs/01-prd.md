@@ -1,0 +1,408 @@
+# link-graph — Product Requirements
+
+Status: draft · 2026-08-18
+Companion to [00-goal.md](00-goal.md) (pitch, gap, success criteria) and
+[census.json](census.json) (measured per-site inventory).
+
+---
+
+## 1. Scope of the estate
+
+All figures below are measured, not estimated. See §14 for method.
+
+|                              | Count | Notes                                    |
+| ---------------------------- | ----- | ---------------------------------------- |
+| Registered prod hostnames    | 165   | from `deployment-configurations`         |
+| ...with a readable sitemap   | 95    | **18,531 URLs total**                    |
+| ...no sitemap, WP REST works | 10    | coverable                                |
+| ...neither sitemap nor REST  | 47    | mostly not content sites                 |
+| ...unreachable               | 12    | includes 2 with live pw-template configs |
+| ...infra helper              | 1     | `kafka-to-wp-helper.staging02`           |
+
+Median site: **27 URLs**. The ten largest sites hold **73%** of all URLs.
+Largest: whyaim.com 3,089 · agent.familyfirstlife.com 2,000* · smsteam.net 1,881 ·
+fidelisagents.com 1,391 · gpis4u.org 1,258 · westernassetprotection.com 1,025 ·
+tidewatermg.com 989.
+
+\* exactly 2,000 indicates a truncated sitemap; true count unknown and higher.
+
+**Coverage is per-capability, not per-site.** Sites without a truth source can be
+checked for broken links and structure but can never have orphans detected, because
+orphan detection is a set difference against a known inventory. The PRD must never
+claim estate-wide orphan coverage.
+
+---
+
+## 2. Definitions
+
+The credibility of this tool rests entirely on these being right. An orphan report
+that is 30% noise gets ignored within two weeks.
+
+| Term                  | Definition                                                                                                                                                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **True orphan**       | Present in the truth source, published, indexable — and zero inbound internal links found anywhere in the crawl.                                                                                                               |
+| **Soft orphan**       | Inbound links exist, but _all_ of them are boilerplate (nav, footer, sidebar). No contextual in-content link anywhere.                                                                                                         |
+| **Sitemap-invisible** | Present in WP REST but absent from the sitemap. Distinct class: often intentional, sometimes an SEO plugin misconfiguration.                                                                                                   |
+| **Excluded**          | Not an orphan by intent: `noindex`, canonical pointing elsewhere, a redirect target, or matched by the site's `ignorePaths`. Counted and shown separately, never in the orphan list.                                           |
+| **Undetectable**      | Site has no truth source. Reported as a coverage gap, never as zero orphans.                                                                                                                                                   |
+| **Boilerplate edge**  | A link whose (target, anchor) pair appears on more than N% of crawled pages. Statistical, not structural — this also catches footer widgets, breadcrumbs and related-post modules that a nav-menu-based definition would miss. |
+| **Contextual edge**   | Any edge that is not boilerplate.                                                                                                                                                                                              |
+| **Blast radius**      | For a broken link: the number of distinct pages linking to it.                                                                                                                                                                 |
+
+Excluded-class detection is **phase 1, not later**. Measured evidence: ~10% of
+tidewatermg.com's sitemap is non-content (86 `bricks_template`, 164 taxonomy
+archives, 4 author archives). Unclassified, that is ~90 phantom orphans on one site.
+
+---
+
+## 3. Site registry
+
+`deployment-configurations` (github.com/img-source) is the canonical upstream and is
+**read-only** — link-graph never opens a PR against it.
+
+```
+deployment-configurations           ← platform/GitOps owned, READ ONLY
+  apps/<app>/envs/{prod,stage}/values.yaml
+    ingress.entries[].hosts[].hostname     → host + www aliases
+    image.tag                              → deployed version
+            │  shallow clone at schedule time; git SHA stamped on each crawl
+            ▼
+  derived registry  +  committed curation overlay
+            ▼
+      link-graph sites table
+```
+
+Derived per site: `siteId`, canonical host, host aliases, stage host, deployed tag.
+Curation overlay supplies: `enabled`, `ignorePaths`, crawler mode, rate override.
+
+**Why a curation layer is required** — the raw repo contains 33 apps with prod values
+but no hostname, variant directories (`-v2`, `-2025`, `-traefik-canary`) and non-site
+utilities (`all-in-one-wpm-backup`). It also contains entries that are not served by
+the platform at all.
+
+**Host aliases are the highest-value thing the registry gives us.** 145 of 312 prod
+hostnames are `www.` aliases and 143 apps declare more than one host. Without this
+alias table every `www.` link becomes a phantom external node and every apex page
+looks orphaned. This is declarative config, not heuristics.
+
+### 3.1 Liveness probe
+
+Registry entries do not imply a live site. Each entry is probed and classified:
+
+`DNS resolves → serves HTTP → carries platform signature (Apache/2.4.68 + CloudFront)
+→ /version.txt present`
+
+Measured drift as of 2026-08-18: 7 apps are registered but not platform-served
+(2 no DNS, 1 not serving, 4 on third-party hosts — WP Engine, Flywheel, nginx).
+These are **work in progress** and enter the registry as `enabled: false`; the
+liveness probe flips them on when they migrate.
+
+Conversely, `agents.integrity.com` (no DNS) and `integritymedicarehelpline.com`
+(connection refused) are dead but hold live pw-template configs — surfaced as a
+registry-health finding.
+
+---
+
+## 4. Truth sources
+
+Resolution order per site, first success wins:
+
+1. **WP REST API** — `/wp-json/wp/v2/types` to enumerate every public post type,
+   then paginate each via `X-WP-TotalPages`.
+2. **Sitemap** — `sitemap_index.xml`, then `sitemap.xml`, then `wp-sitemap.xml`.
+   Index sitemaps nest; children must be followed.
+3. **None** — orphan detection disabled for that site; other checks still run.
+
+**Enumerating all post types is mandatory, not an optimisation.** integrity.com's
+`pages` post type holds 96 of 1,953 sitemap URLs — 5%. A hardcoded `pages` scrape
+sees a twentieth of the site. tidewatermg.com carries 15 content post types.
+
+REST and sitemap disagree in both directions and the disagreement is itself a
+finding: integrity.com exposes `promotion` (5) and `webinar` (10) via REST that are
+absent from its sitemap.
+
+**Classification runs on the truth source before anything else.** Drop page-builder
+artifacts (`bricks_template`, `gblocks_*`), taxonomy archives, author archives and
+`ignorePaths` matches into the Excluded class. Rules are per-site: taxonomy archives
+are 17% of tidewatermg.com's sitemap but 1% of integrity.com's.
+
+---
+
+## 5. Crawler
+
+**Plain HTTP fetch + HTML parse by default; Playwright opt-in per site via config.**
+These are server-rendered WordPress sites, so links are in the HTML. Playwright across
+the estate is infeasible; HTTP fetching makes it minutes.
+
+### 5.0 Stack, and why not a framework
+
+| Concern          | Choice                                                |
+| ---------------- | ----------------------------------------------------- |
+| HTTP             | `undici` — pooling, keep-alive, redirects             |
+| HTML parse       | `cheerio` — `.closest()` gives DOM container per link |
+| Rate limiting    | `bottleneck` — native per-key limiters, keyed by host |
+| Frontier + state | Postgres table — resume is a `SELECT`                 |
+| robots.txt       | `robots-parser`                                       |
+| Sitemap          | `sitemapper` — proven in pw-template, copy it         |
+| JS rendering     | `playwright` directly, opt-in sites only              |
+
+Roughly 300-400 lines behind a `crawl(site, urls) -> {pages, links}` interface, so the
+decision is reversible in one module.
+
+**Why no crawler framework.** Two requirements decide it. First, **we must parse the
+HTML ourselves regardless** — anchor text and DOM container are SEO concerns that no
+general-purpose crawler emits (see §6.1). Once parsing is ours, the framework's
+remaining job is "fetch this list politely and survive an hour-long ban", which is a
+Postgres frontier plus a rate limiter. Second, **our crawl is not frontier-shaped**:
+the truth source hands us most URLs up front, so this is a work queue over a known
+list rather than open-ended discovery, and `RequestQueue`-style machinery earns little.
+
+Crawlee JS specifically fails both hard requirements: it has **no SQL storage client**
+(`MemoryStorage` offloaded to `CRAWLEE_STORAGE_DIR`; Postgres is roadmapped for v4,
+and exists only in Crawlee Python), and its rate limiting is **per-crawler, not
+per-host** — so a per-host limit means 165 instances of an autoscaling engine we would
+configure not to scale. Its real strengths (autoscaling, proxy rotation, session pools,
+fingerprinting) address crawling the hostile open web at scale; we crawl our own
+uniform estate at 1 req/s.
+
+Scrapy is the strongest alternative and solves both natively
+(`CONCURRENT_REQUESTS_PER_DOMAIN`, `DOWNLOAD_DELAY`, `JOBDIR` resume) at the cost of a
+second language; revisit if the thin crawler proves painful.
+
+**Rendered HTML is the only link source.** `content.rendered` is empty on every page
+sampled from both integrity.com and tidewatermg.com — content lives in page-builder
+metadata (Bricks, GenerateBlocks). Parsing `post_content` would require a parser per
+builder per version. `<a href>` is universal.
+
+### 5.1 Rate limiting
+
+Measured on whyaim.com, 2026-08-18: Wordfence returns **503 at ~8 req/s sustained,
+first block at request ~155**, with `retry-after: 3600` — a **one hour** IP ban.
+Short bursts pass regardless of rate (20 req at 40/s was fine), so it is a
+rate-over-window limit, not a burst limit. Blocks are per-IP and per-host.
+
+Requirements:
+
+- Default **~1 req/s per host**; per-site override in the curation overlay.
+- Back off on the **first** 503 and honour `retry-after`.
+- **Persist crawl state and resume.** A block 1,800 pages into a 3,000-page crawl
+  pauses that host and continues later — it does not restart and does not fail the run.
+- **Parallelise across hosts freely** — the limit is per host. 8–16 concurrent sites
+  keeps a full estate sweep near an hour.
+- Record observed thresholds per site over time; tune from data rather than config
+  archaeology.
+
+CloudFront fronts every site, so cached pages cost the origin little — but a crawl
+of distinct URLs is nearly all cache misses and does reach Wordfence.
+
+---
+
+## 6. Link classification
+
+Every extracted edge is classified on two axes:
+
+- **Internal / external** — resolved against the site's full host-alias set, so
+  `www.` and apex are the same site.
+- **Boilerplate / contextual** — an edge whose (target, anchor) pair appears on
+  more than N% of crawled pages is boilerplate. N is tunable; start at 60%.
+
+### 6.1 Link verification
+
+Verification splits three ways, and only one third of it is ours to build:
+
+| Job                                                                    | Owner                                 |
+| ---------------------------------------------------------------------- | ------------------------------------- |
+| Traverse our sites, extract links **with anchor text + DOM container** | **Ours** — no existing tool does this |
+| Verify **external** URLs are alive, politely, cached                   | **lychee** — purpose-built            |
+| Verify **internal** URLs                                               | Free — the crawl already fetched them |
+
+**Internal link status needs no separate check.** The crawler fetches every internal
+page and records its status code, so a broken internal link is a join, not a request.
+The exception is non-HTML internal targets (PDFs, media) the crawler does not fetch;
+those go through the same path as external.
+
+**External links are checked once, centrally, and shared across all 165 sites** via a
+URL-keyed table with a TTL. This is the single strongest argument for centralisation:
+the same third-party URL appears across many sites and must not be checked many times.
+Third-party 429/403 is recorded as _unverified_, never as _broken_.
+
+The checker is **[lychee](https://github.com/lycheeverse/lychee)** — a Rust static
+binary that already provides everything this component required: per-host throttling
+(`--host-concurrency`, `--host-request-interval`), rate-limit awareness with
+retry/backoff, scheme and pattern exclusions, and JSON output. It ships into the worker
+image as a binary with no language contamination, invoked as a subprocess.
+
+`external_urls` remains the source of truth, **not** lychee's `.lycheecache`. Our table
+is queryable, shared across sites, and owns the TTL policy; select the URLs due for a
+recheck, pass only those to lychee, ingest the JSON back. Its own cache is redundant
+and stays disabled.
+
+Evaluated and rejected as the _crawler_: Crawlee JS (no SQL storage client until v4;
+rate limiting is per-crawler not per-host), Katana, muffet, linkinator, Scrapy. Every
+one of them fetches and verifies well, and none emit anchor text or DOM container --
+that is an SEO concern rather than a link-checking one, which is precisely why the
+extraction layer stays ours. See §5.
+
+---
+
+## 7. Data model
+
+Postgres. Graph maths stays in SQL — inbound counts and section matrices are
+`GROUP BY`, crawl depth is a recursive CTE. At this scale no in-memory graph layer
+is needed.
+
+```
+sites            id, site_id, canonical_host, aliases[], stage_host,
+                 enabled, truth_source, crawler_mode, rate_limit, ignore_paths[]
+registry_health  site_id, checked_at, dns_ok, serves, platform_sig, version_txt
+
+crawls           id, site_id, env, started_at, finished_at, status,
+                 deployed_tag, registry_sha, pages_seen, was_throttled
+pages            id, crawl_id, url_normalized, path, post_type, status_code,
+                 depth, in_truth_source, indexable, canonical_to, redirect_to, class
+links            id, crawl_id, from_page_id, to_url_normalized, to_page_id,
+                 anchor, rel, is_external, is_boilerplate
+external_urls    url_normalized, last_checked, status_code, unverified  -- shared, TTL
+
+crawl_metrics    crawl_id, orphans, soft_orphans, excluded, broken, external, ...
+crawl_diffs      from_crawl_id, to_crawl_id, kind, url, detail
+```
+
+**URL normalization is its own package with its own test suite, built first.**
+Trailing slashes, `?utm_*`, case, www vs apex, http vs https, fragments and WP's
+`?p=123` all create phantom nodes that present as orphans and broken links. The
+existing pw-template helper (`baseUrl.replace(/\/+$/,"")` plus `.replace(base,"")`)
+is adequate for a 10-item list and nowhere near sufficient for node identity.
+Keep its root-relative path convention — it makes cross-environment comparison natural.
+
+**Retention.** Full link-level detail for the last 12 crawls per site (~3 months at
+weekly cadence), then roll up to `crawl_metrics` kept indefinitely. Ballpark 1.5M link
+rows per full estate crawl; ~18M rows retained. Comfortable for one Postgres instance.
+
+---
+
+## 8. Architecture
+
+Docker Compose on a single VM.
+
+```
+  scheduler ──enqueue──> redis ──> worker × N ──> postgres <── api <── web (Astro)
+      │                            crawl / analyse / linkcheck queues
+      └── shallow-clones deployment-configurations, reads image.tag
+
+  crawl     : undici + cheerio + bottleneck, Postgres frontier   (ours)
+  analyse   : SQL — inbound counts, depth, orphan set difference (ours)
+  linkcheck : lychee subprocess over due external URLs           (vendored binary)
+```
+
+Three queues, one worker image — isolation without a distributed system. Playwright
+builds as a separate heavier image from the lean api/web ones; the lychee static
+binary is vendored into the worker image.
+
+Operational requirements this adds versus a managed platform:
+
+- **Postgres backup.** It is the system of record and holds history that cannot be
+  re-derived.
+- **Static egress IP**, so the crawler can be identified in logs and allowlisted later.
+
+**The scheduler owns crawling. Jenkins does nothing.** Release attribution is
+preserved without CI integration by reading `image.tag` from the registry at crawl
+time — diffs can still say "these orphans appeared between v1.6.8 and v1.7.0".
+Note 49 apps currently run different tags in prod and stage.
+
+Cadence: weekly full crawl per site. Prod only in phase 1; staging is publicly
+reachable and becomes a phase-2 config flag.
+
+---
+
+## 9. Interface
+
+Two audiences, equal priority: **one data layer, two view sets.**
+
+|         | Engineers                           | Content / SEO            |
+| ------- | ----------------------------------- | ------------------------ |
+| Entry   | API, CLI, raw tables                | Per-site guided view     |
+| Framing | "orphans", "inbound edges", "depth" | "pages nothing links to" |
+| Task    | query, export, diff                 | work a fix list          |
+
+A plain-language layer is a **requirement, not polish** — the same number needs two
+names.
+
+**Node-link graphs are a drill-down, not the front page.** Force-directed layouts
+degrade into hairballs past a few hundred nodes, and websites are the worst case
+because global nav makes nearly every page link to nearly every other. Primary views:
+
+1. **Sorted tables** — orphans, soft orphans, broken links by blast radius. The
+   deliverable.
+2. **Treemap / icicle** of URL hierarchy, coloured by inbound count or orphan status.
+   "Site shape at a glance", scales to thousands.
+3. **Section→section matrix** — aggregate link counts at a readable altitude.
+4. **Distribution charts** — depth, status codes, link counts. _This is the
+   TanStack Charts slot._
+5. **Ego network** — one page, 1–2 hops. Node-link earns its place here, ~50 nodes,
+   plain SVG.
+
+---
+
+## 10. Notifications
+
+With no CI gate, **notifications are the only mechanism that causes action.** Nothing
+fails, so if nobody opens the dashboard nothing happens. This is core, not phase 4.
+
+Follow existing conventions (`utils/notify-asana.sh`): a scheduled digest, plus alerts
+when new orphans or broken links appear or when registry health changes.
+
+---
+
+## 11. Non-goals
+
+Not an SEO audit suite. No title/meta/heading analysis, readability, spell checking,
+schema or hreflang validation, or accessibility scanning — that lives in pw-template.
+
+**If a feature is not about links, reachability, or change over time, it is out of
+scope.** Chasing Screaming Frog's feature list produces a worse Screaming Frog.
+
+Also out: third-party backlink data (licensed), GSC/GA integration (possible later,
+not now), and any modification of pw-template or deployment-configurations.
+
+---
+
+## 12. Phases
+
+1. **Truth source + normalization.** CLI only, no UI, no queue. Crawl one site to
+   Postgres and print the orphan table. Validates URL normalization and the
+   REST/sitemap reconciliation — the two things that decide whether anyone trusts this.
+2. **Classification + broken links + external link cache** (lychee integration).
+3. **Registry + liveness probe + multi-site scheduling.**
+4. **API + Astro: tables and treemap.** Both audiences.
+5. **Diffs, history, notifications.**
+6. **Ego-network drill-down; staging crawling.**
+
+---
+
+## 13. Risks
+
+| Risk                                        | Mitigation                                                                |
+| ------------------------------------------- | ------------------------------------------------------------------------- |
+| Orphan false positives destroy trust        | Excluded-class detection in phase 1; measure FP rate before wider rollout |
+| URL normalization bugs create phantom nodes | Own package, own test suite, built first                                  |
+| Wordfence blocks cost an hour per host      | 1 req/s default, first-503 backoff, resumable state                       |
+| Scope creep toward an SEO suite             | §11, enforced                                                             |
+| Truncated sitemaps under-report             | Cross-check REST totals against sitemap counts; flag disagreement         |
+| 47 sites have no truth source               | Report as coverage gap; never report "0 orphans" for them                 |
+
+---
+
+## 14. Method
+
+Estate figures measured 2026-08-18 by fetching every registered prod hostname's
+sitemap index and summing child sitemap `<loc>` counts; sitemap-less hosts were then
+probed for `/wp-json/wp/v2/types`. Raw output in `census.json`. Rate limits measured
+by ramped probing of whyaim.com until Wordfence returned 503.
+
+## 15. Open
+
+- Are the ~23 sitemap-less, REST-less hosts that look like real sites in scope?
+  (The other ~24 are planenroll funnels, rate calculators and APIs — presumed out.)
+- Boilerplate threshold N — start at 60%, tune against real data.
+- Wordfence per-site thresholds — deliberately deferred; learn from crawl telemetry.

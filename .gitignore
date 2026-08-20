@@ -1,0 +1,60 @@
+# --- dependencies ---
+node_modules/
+.pnp
+.pnp.js
+
+# --- build output ---
+dist/
+build/
+*.tsbuildinfo
+
+# --- test & coverage ---
+coverage/
+.nyc_output/
+
+# --- Playwright (opt-in crawler mode, PRD §5) ---
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+playwright/.auth/
+
+# --- Astro (web service) ---
+.astro/
+
+# --- lychee (external link checker, PRD §6.1) ---
+# our external_urls table is the source of truth, not this cache
+.lycheecache
+
+# --- local Postgres volume (docker compose) ---
+.data/
+pgdata/
+
+# --- secrets ---
+# .env.example IS committed as the documented template
+.env
+.env.*
+!.env.example
+
+# --- logs ---
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- local scratch ---
+scratch/
+tmp/
+*.local
+
+# --- editors ---
+.vscode/
+.idea/
+*.swp
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# NOTE: docs/census.json is deliberately NOT ignored — it is measured estate data
+# referenced throughout the PRD, and is documentation rather than build output.
