@@ -300,6 +300,29 @@ describe("parseCrawlFixture: what it refuses", () => {
     ).toThrow(/statusCode must be an integer/);
   });
 
+  /**
+   * The class vocabulary is analyse's output (step 4) and belongs to `pages.class`, so a
+   * fixture that names a class outside it is a typo, not data. It was a real one: this
+   * file's sibling integration test carried `class: "content"` until the vocabulary
+   * landed, and nothing rejected it.
+   */
+  it("refuses a page class outside the vocabulary", () => {
+    expect(() =>
+      parseCrawlFixture(
+        json((j) => {
+          pagesOf(j)[0]!.class = "content";
+        }),
+      ),
+    ).toThrow(/class must be one of .*orphan.*got content/);
+    expect(() =>
+      parseCrawlFixture(
+        json((j) => {
+          pagesOf(j)[0]!.class = "soft_orphan";
+        }),
+      ),
+    ).not.toThrow();
+  });
+
   it("refuses anything that is not an object", () => {
     expect(() => parseCrawlFixture(null)).toThrow(/expected an object/);
     expect(() => parseCrawlFixture([])).toThrow(/expected an object/);

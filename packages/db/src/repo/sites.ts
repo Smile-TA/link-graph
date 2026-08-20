@@ -69,6 +69,18 @@ export async function upsertSite(db: Queryable, site: SiteInput): Promise<SiteRo
   return row;
 }
 
+/**
+ * The registry row behind a crawl. `crawls.site_id` is the surrogate id, so this is
+ * the lookup analyse needs: the alias set decides the homepage URL, and `truth_source`
+ * decides whether the orphan question can be answered at all (PRD §2).
+ */
+export async function findSiteById(db: Queryable, id: number): Promise<SiteRow | null> {
+  const { rows } = await db.query<SiteRow>(`SELECT ${COLUMNS} FROM sites WHERE id = $1`, [
+    id,
+  ]);
+  return rows[0] ?? null;
+}
+
 export async function findSiteBySlug(
   db: Queryable,
   siteId: string,

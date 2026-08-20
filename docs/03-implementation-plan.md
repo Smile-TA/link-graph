@@ -191,7 +191,7 @@ apply identically — they belong in `core` before step 6, or node identity spli
 
 ---
 
-## Step 4 — `analyse`: the orphan set difference — M
+## Step 4 — `analyse`: the orphan set difference — M — **done**
 
 Built **before** the crawler, on purpose. Seeded from a fixture, the orphan maths can
 be proven correct against a known answer — which is impossible when the input is a
@@ -230,9 +230,51 @@ soft-orphan test already answers better, and adds a column nobody can explain.
 two real crawls at 40/50/60/70/80 and pick from the data. Record the choice and the
 evidence in the PRD.
 
-**Done when** a hand-built fixture — transcribed from a real ~27-URL site, not
-invented — with one planted true orphan, one soft orphan, and one `noindex` page
-produces exactly those three classifications and nothing else.
+**Done.** 144 unit + 57 integration tests. `analyse(pool, crawlId, opts)` writes
+`pages.class`, `pages.depth`, `links.is_boilerplate` and one `crawl_metrics` row in a
+single transaction. Graph maths is SQL; PRD §2's taxonomy is a pure, unit-tested
+function; `analyse.ts` is wiring plus six refusals.
+
+**Fixture is the whole of 403bplan.net** — all 13 sitemap URLs plus a planted `noindex`
+`/?s=403b`, captured at 1 req/s. Verified output: 6 `linked`, **4 `orphan`**,
+3 `soft_orphan`. The four orphans have zero inbound edges and NULL depth, and were
+re-fetched live at 200.
+
+**It found a contradiction in PRD §2 rather than papering over it** — see §2. One of the
+three soft orphans is a false positive of the rule as written. The agent implemented the
+PRD's operative rule and reported the conflict instead of inventing a third rule, which
+is the correct behaviour.
+
+**`crawl_metrics` makes `orphans`/`soft_orphans` nullable** — NULL, never 0, when a site
+has no truth source, with a CHECK keeping them null together. That is PRD §2's
+Undetectable class made unrepresentable-as-zero rather than merely documented.
+
+**A §1 hole `analyse` cannot close alone:** the four step-3 captures report `orphans: 0`
+for sites with 1,953 and 989 sitemap URLs, because nothing records how large the truth
+source was. A one-page crawl of integrity.com looks like a clean bill of health. Step 5
+must write a truth-source count onto `crawls`, and `analyse` must refuse when a crawl
+covers materially less of it.
+
+**Boilerplate is vacuous on tiny crawls:** at one page, every pair is on 100% of pages,
+so integrity.com and lionstreet.com come out 58/58 and 25/25 boilerplate. N is a
+parameter defaulting to 60 and stored per row; **not calibrated, and nothing written to
+the PRD.** Single-site evidence is strong but narrow — the pair-frequency distribution on
+403bplan.net is strictly bimodal (34 pairs at 1/13, 11 at 2/13, 12 at 13/13, nothing
+between), so every N from 10 to 99 gives the identical answer. Estate-wide calibration
+waits for step 7.
+
+**Depth needed a real algorithm.** The naive `(id, depth)` `UNION` recursive CTE never
+stops finding new rows on a nav-linked graph and ran its full 32-level ceiling in 11.8s;
+a frontier-array form stops at the true diameter in 3.3s and needs no ceiling. At PRD
+§7's scale the whole pass is ~21s, ~13s of which is writing 600k rows rather than
+deciding what to write.
+
+**Self-links are not inbound links** — a page cannot be reached from itself. This
+refines §2's wording and only ever enlarges the orphan set. Boilerplate _frequency_
+still counts them, since that measures appearances.
+
+**Incidental real finding:** `/test-pay-button/` is a live, sitemapped orphan on
+403bplan.net — a leftover test page.
 
 ---
 

@@ -9,7 +9,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadFixture, parseCrawlFixture } from "./fixture.js";
 import { runMigrations } from "./migrate.js";
 import { insertCrawlDiff, listCrawlDiffs } from "./repo/crawl-diffs.js";
-import { findCrawlMetrics, upsertCrawlMetrics } from "./repo/crawl-metrics.js";
+import {
+  findCrawlMetrics,
+  upsertCrawlMetrics,
+  type CrawlMetricsInput,
+} from "./repo/crawl-metrics.js";
 import { insertCrawl } from "./repo/crawls.js";
 import { findExternalUrl, upsertExternalUrl } from "./repo/external-urls.js";
 import { insertLinks } from "./repo/links.js";
@@ -228,30 +232,63 @@ describe("links", () => {
 });
 
 describe("crawl_metrics", () => {
-  it("upserts, so re-running analyse replaces a crawl's numbers", async () => {
-    await upsertCrawlMetrics(db.pool, {
-      crawlId,
-      orphans: 3,
-      softOrphans: 1,
-      excluded: 12,
-      broken: 0,
-      external: 7,
-    });
-    await upsertCrawlMetrics(db.pool, {
+  const metrics = (overrides: Partial<CrawlMetricsInput> = {}): CrawlMetricsInput => ({
+    crawlId,
+    orphans: 3,
+    softOrphans: 1,
+    linked: 40,
+    excluded: 12,
+    notInTruthSource: 2,
+    undetectable: 0,
+    unreachable: 3,
+    broken: 0,
+    internalUnresolved: 431,
+    external: 7,
+    boilerplateThresholdPct: 60,
+    ...overrides,
+  });
+
+  /**
+   * Every column is different between the two writes, not just one: the whole reason
+   * this is an upsert is that re-running analyse replaces a crawl's numbers, and a SET
+   * clause missing from the conflict target leaves one stale number behind — which reads
+   * as a real change when step 13 diffs two crawls.
+   */
+  it("upserts every column, so re-running analyse replaces a crawl's numbers", async () => {
+    await upsertCrawlMetrics(db.pool, metrics());
+    const second: CrawlMetricsInput = {
       crawlId,
       orphans: 2,
-      softOrphans: 1,
+      softOrphans: 4,
+      linked: 41,
+      excluded: 13,
+      notInTruthSource: 3,
+      undetectable: 1,
+      unreachable: 5,
+      broken: 6,
+      internalUnresolved: 430,
+      external: 8,
+      boilerplateThresholdPct: 50,
+    };
+    await upsertCrawlMetrics(db.pool, second);
+    expect(await findCrawlMetrics(db.pool, crawlId)).toEqual(second);
+  });
+
+  /**
+   * PRD §2: a site with no truth source reports the orphan counters as unknown, never as
+   * zero. 005_analysis.sql keeps the two null together, because one known and the other
+   * not is a bookkeeping bug rather than a fact about a site.
+   */
+  it("stores unknown orphan counters as null, and refuses one null without the other", async () => {
+    await expect(upsertCrawlMetrics(db.pool, metrics({ orphans: null }))).rejects.toThrow(
+      /crawl_metrics_orphans_known_together/,
+    );
+    await upsertCrawlMetrics(db.pool, metrics({ orphans: null, softOrphans: null }));
+    expect(await findCrawlMetrics(db.pool, crawlId)).toMatchObject({
+      orphans: null,
+      softOrphans: null,
+      // Still counted: a noindex page is excluded whether or not an inventory exists.
       excluded: 12,
-      broken: 0,
-      external: 7,
-    });
-    expect(await findCrawlMetrics(db.pool, crawlId)).toEqual({
-      crawlId,
-      orphans: 2,
-      softOrphans: 1,
-      excluded: 12,
-      broken: 0,
-      external: 7,
     });
   });
 });

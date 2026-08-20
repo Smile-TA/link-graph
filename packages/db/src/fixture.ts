@@ -60,7 +60,12 @@ import {
   type CrawlEnv,
   type CrawlStatus,
 } from "./repo/crawls.js";
-import { insertPages, type PageInput } from "./repo/pages.js";
+import {
+  insertPages,
+  PAGE_CLASSES,
+  type PageClass,
+  type PageInput,
+} from "./repo/pages.js";
 import { insertLinks, type LinkInput } from "./repo/links.js";
 
 /**
@@ -259,12 +264,27 @@ function parsePages(raw: unknown[], hosts: SiteHosts): PageInput[] {
       // point off-site, so neither is required to be internal.
       canonicalTo: optNormalized(f.optStr("canonicalTo"), hosts, "canonicalTo", where),
       redirectTo: optNormalized(f.optStr("redirectTo"), hosts, "redirectTo", where),
-      class: f.optStr("class"),
+      // Validated against the vocabulary rather than taken as a string: the CHECK in
+      // 005_analysis.sql would refuse an unknown class at INSERT time, but a fixture is
+      // read long before that and the error should name the fixture.
+      class: pageClass(f.optStr("class"), where),
     };
     f.done();
     pages.push(page);
   });
   return pages;
+}
+
+function pageClass(value: string | null, where: string): PageClass | null {
+  if (value === null) return null;
+  // Both casts are safe and neither is avoidable: `includes` on a `readonly PageClass[]`
+  // will not accept a plain string as its argument, and TypeScript does not narrow a
+  // string from an `includes` guard. `fail` returns never, so past it the value is a
+  // member of the list.
+  if (!(PAGE_CLASSES as readonly string[]).includes(value)) {
+    fail(where, `class must be one of ${PAGE_CLASSES.join(", ")}, got ${value}`);
+  }
+  return value as PageClass;
 }
 
 function parseLinks(

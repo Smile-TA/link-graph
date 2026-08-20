@@ -249,7 +249,7 @@ describe("loadFixture: every column, at a non-default value", () => {
         inTruthSource: true,
         indexable: true,
         canonicalTo: "https://tidewatermg.com/",
-        class: "content",
+        class: "linked",
       },
       {
         url: "https://tidewatermg.com/?s=medicare",
@@ -323,7 +323,7 @@ describe("loadFixture: every column, at a non-default value", () => {
         indexable: true,
         canonicalTo: "https://tidewatermg.com/",
         redirectTo: null,
-        class: "content",
+        class: "linked",
       },
       {
         id: pages[1]?.id,

@@ -49,6 +49,34 @@ that is 30% noise gets ignored within two weeks.
 | **Contextual edge**   | Any edge that is not boilerplate.                                                                                                                                                                                              |
 | **Blast radius**      | For a broken link: the number of distinct pages linking to it.                                                                                                                                                                 |
 
+**Measured 2026-08-20, and §2 contradicts itself in effect.** The operative rule is
+purely statistical — `(target, anchor)` frequency — but the soft-orphan gloss promises
+structure ("nav, footer, sidebar… No contextual in-content link anywhere"). On
+403bplan.net those diverge: `/contact-us/` has two genuine in-content links, both in
+`main`, from `/financial-advisor/` and `/plan-participant/`. Because their anchor text
+"Contact Us" matches the header nav entry, the pair appears on 13/13 pages and both are
+marked boilerplate, so the page classifies `soft_orphan` with zero contextual edges.
+**One of three soft orphans on that site is a false positive of the rule as written.**
+Three ways out, to be decided:
+
+1. Key boilerplate on `(target, anchor, container)` — the two `main` edges then form
+   their own pair at 2/13 and stay contextual. Uses data step 2 already computes and
+   step 3 already stores, keeps the definition statistical, and needs no special case.
+   **Recommended.**
+2. Treat `main`/`article` edges as contextual regardless of frequency — cruder, and it
+   would stop catching the related-post modules §2 explicitly wants caught.
+3. Accept the statistical definition and drop the "in-content" wording.
+
+**Two further §2 gaps, both measured:**
+
+- **Every homepage is a soft orphan by the letter.** 403bplan.net's homepage has 12
+  inbound edges, all header logo links with an empty anchor, so all boilerplate. `analyse`
+  carries a crawl-root exception (a crawl root is never an orphan); §2 should record it.
+- **A `noindex` page can hide a real orphan.** Adding the `noindex` search page removes
+  `/plan-participant/online-access/` from the orphan set, because its only site-wide
+  link comes from that excluded, unreachable page. §2's "anywhere in the crawl" makes
+  this correct by the letter and wrong in effect. Undecided.
+
 Excluded-class detection is **phase 1, not later**. Measured evidence: ~10% of
 tidewatermg.com's sitemap is non-content (86 `bricks_template`, 164 taxonomy
 archives, 4 author archives). Unclassified, that is ~90 phantom orphans on one site.

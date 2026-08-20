@@ -1,6 +1,36 @@
 /** `pages` — the nodes of one crawl's graph (PRD §7). */
 import type { Queryable } from "../pool.js";
 
+/**
+ * The closed vocabulary of `pages.class` — one page's answer to the orphan question
+ * (PRD §2), computed by `analyse` (step 4).
+ *
+ * It lives here, beside the column, for the reason `crawls.ts` gives for
+ * `CRAWL_STATUSES`: declared as a value with the union derived from it, so the fixture
+ * parser validates against the same list rather than repeating it. The second copy is
+ * the CHECK constraint in `005_analysis.sql`. `packages/analyse` re-exports this.
+ *
+ * `sitemap-invisible` (PRD §2) is deliberately absent: it means "in WP REST but not in
+ * the sitemap", which needs the two truth sources kept apart, and `in_truth_source` is
+ * one boolean. It belongs to step 5, and a class that can never be assigned would put a
+ * permanent zero in front of a reader.
+ */
+export const PAGE_CLASSES = [
+  /** Something other than the nav or the footer links here — the ordinary case. */
+  "linked",
+  /** Inbound edges exist and every one of them is boilerplate (PRD §2). */
+  "soft_orphan",
+  /** In the truth source, includable, and nothing links here at all (PRD §2). */
+  "orphan",
+  /** Not an orphan by intent: noindex, canonical elsewhere, a redirect, ignore_paths. */
+  "excluded",
+  /** Crawled, but the inventory does not list it, so the question does not apply. */
+  "not_in_truth_source",
+  /** No truth source, so the orphan question cannot be answered at all (PRD §2). */
+  "undetectable",
+] as const;
+export type PageClass = (typeof PAGE_CLASSES)[number];
+
 export interface PageInput {
   /** Node identity: absolute, normalized, canonical host. */
   readonly urlNormalized: string;
@@ -14,8 +44,8 @@ export interface PageInput {
   readonly indexable: boolean;
   readonly canonicalTo: string | null;
   readonly redirectTo: string | null;
-  /** `null` = not classified. The vocabulary belongs to analyse (step 4). */
-  readonly class: string | null;
+  /** `null` = not classified yet, which is never the same as "nothing was found". */
+  readonly class: PageClass | null;
 }
 
 export interface PageRow extends PageInput {
@@ -23,7 +53,13 @@ export interface PageRow extends PageInput {
   readonly crawlId: number;
 }
 
-const COLUMNS = `id, crawl_id AS "crawlId", url_normalized AS "urlNormalized", path,
+/**
+ * Exported so that step 4's analysis queries, which select these same columns with a
+ * `p.` alias, do not restate the camelCase alias list — the point of keeping column
+ * knowledge in one place (see the note at the top of `sites.ts`).
+ */
+export const PAGE_COLUMNS = `id, crawl_id AS "crawlId",
+  url_normalized AS "urlNormalized", path,
   post_type AS "postType", status_code AS "statusCode", depth,
   in_truth_source AS "inTruthSource", indexable, canonical_to AS "canonicalTo",
   redirect_to AS "redirectTo", class`;
@@ -82,8 +118,24 @@ export async function insertPages(
 
 export async function listPages(db: Queryable, crawlId: number): Promise<PageRow[]> {
   const { rows } = await db.query<PageRow>(
-    `SELECT ${COLUMNS} FROM pages WHERE crawl_id = $1 ORDER BY url_normalized`,
+    `SELECT ${PAGE_COLUMNS} FROM pages WHERE crawl_id = $1 ORDER BY url_normalized`,
     [crawlId],
   );
   return rows;
+}
+
+/**
+ * One page by its URL within a crawl — the depth root lookup (step 4). `(crawl_id,
+ * url_normalized)` is unique, so this returns at most one row.
+ */
+export async function findPageByUrl(
+  db: Queryable,
+  crawlId: number,
+  urlNormalized: string,
+): Promise<PageRow | null> {
+  const { rows } = await db.query<PageRow>(
+    `SELECT ${PAGE_COLUMNS} FROM pages WHERE crawl_id = $1 AND url_normalized = $2`,
+    [crawlId, urlNormalized],
+  );
+  return rows[0] ?? null;
 }

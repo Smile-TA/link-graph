@@ -6,3 +6,4 @@ scratch/
 # Saved HTTP responses: `prettier --write` would reformat the captured markup and
 # silently change what the extraction tests assert (anchor whitespace, entities).
 packages/core/test/fixtures/pages/
+packages/analyse/test/fixtures/
