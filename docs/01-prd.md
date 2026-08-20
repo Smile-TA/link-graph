@@ -78,7 +78,6 @@ that is 30% noise gets ignored within two weeks.
 | Term                  | Definition                                                                                                                                                                                                                     |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **True orphan**       | Present in the truth source, published, indexable — and zero inbound internal links found anywhere in the crawl.                                                                                                               |
-| **Soft orphan**       | Inbound links exist, but _all_ of them are boilerplate (nav, footer, sidebar). No contextual in-content link anywhere.                                                                                                         |
 | **Sitemap-invisible** | Present in WP REST but absent from the sitemap. Distinct class: often intentional, sometimes an SEO plugin misconfiguration.                                                                                                   |
 | **Excluded**          | Not an orphan by intent: `noindex`, canonical pointing elsewhere, a redirect target, or matched by the site's `ignorePaths`. Counted and shown separately, never in the orphan list.                                           |
 | **Undetectable**      | Site has no truth source. Reported as a coverage gap, never as zero orphans.                                                                                                                                                   |
@@ -86,33 +85,52 @@ that is 30% noise gets ignored within two weeks.
 | **Contextual edge**   | Any edge that is not boilerplate.                                                                                                                                                                                              |
 | **Blast radius**      | For a broken link: the number of distinct pages linking to it.                                                                                                                                                                 |
 
-**Measured 2026-08-20, and §2 contradicts itself in effect.** The operative rule is
-purely statistical — `(target, anchor)` frequency — but the soft-orphan gloss promises
-structure ("nav, footer, sidebar… No contextual in-content link anywhere"). On
-403bplan.net those diverge: `/contact-us/` has two genuine in-content links, both in
-`main`, from `/financial-advisor/` and `/plan-participant/`. Because their anchor text
-"Contact Us" matches the header nav entry, the pair appears on 13/13 pages and both are
-marked boilerplate, so the page classifies `soft_orphan` with zero contextual edges.
-**One of three soft orphans on that site is a false positive of the rule as written.**
-Three ways out, to be decided:
+**Decision 2026-08-20: the soft-orphan class is dropped.** A page with inbound links is
+`linked`, however those links are styled or wherever they sit. Two independent
+measurements killed the rule, neither of which was a coding error:
 
-1. Key boilerplate on `(target, anchor, container)` — the two `main` edges then form
-   their own pair at 2/13 and stay contextual. Uses data step 2 already computes and
-   step 3 already stores, keeps the definition statistical, and needs no special case.
-   **Recommended.**
-2. Treat `main`/`article` edges as contextual regardless of frequency — cruder, and it
-   would stop catching the related-post modules §2 explicitly wants caught.
-3. Accept the statistical definition and drop the "in-content" wording.
+1. **It produced a false positive on real data.** `/contact-us/` on 403bplan.net has two
+   genuine in-content links, both in `main`, from `/financial-advisor/` and
+   `/plan-participant/`. Their anchor text "Contact Us" matches the header nav entry, so
+   the `(target, anchor)` pair sat on 13/13 pages and both were marked boilerplate — the
+   page classified `soft_orphan` with zero contextual edges. One of three soft orphans on
+   that site was wrong.
+2. **The verdict depended on which requests the crawler chose to make.** Boilerplate
+   frequency divides by pages _fetched_, so every extra page row lowers every pair's
+   ratio. Measured: crawling 403bplan.net's 17 internal PDF links alongside its 13 real
+   pages moved the denominator from 13 to 30, put the site-wide nav pairs at 43% — under
+   the 60% threshold — and turned **all three** of its soft orphans into `linked`. Zero
+   soft orphans for a site that has three, from a decision that looks like it only
+   concerns which URLs to enqueue.
 
-**Two further §2 gaps, both measured:**
+A class that flips on the crawler's URL-admission policy cannot carry a report anyone
+acts on. **True orphans are unaffected** — they have zero inbound edges, so no frequency
+threshold enters the verdict.
 
-- **Every homepage is a soft orphan by the letter.** 403bplan.net's homepage has 12
-  inbound edges, all header logo links with an empty anchor, so all boilerplate. `analyse`
-  carries a crawl-root exception (a crawl root is never an orphan); §2 should record it.
+`is_boilerplate` is still computed, because PRD §9's section matrix and ego network read
+edge kinds. **But threshold N is no longer correctness-critical**: with soft orphans gone,
+N cannot change any page's class. It is now a display parameter, which retires the §15
+open item's urgency. If §9's views turn out not to need it, the whole boilerplate pass can
+go — a separate, smaller decision.
+
+Two further §2 gaps, both measured, both **still open**:
+
+- **A page reachable only through a redirect classifies `orphan` and `unreachable`.** The
+  destination is in the truth source, returns 200, and no `<a href>` points at it, so it
+  is a true orphan by §2's letter with NULL depth. Redirects live on `pages.redirect_to`
+  and never as `links` rows — deliberately, since synthetic redirect edges would enter the
+  `(target, anchor)` frequency count. The reading is arguably right ("nothing links here;
+  the only way in is a redirect") but it is not what §2 says, and the two should probably
+  be told apart.
 - **A `noindex` page can hide a real orphan.** Adding the `noindex` search page removes
-  `/plan-participant/online-access/` from the orphan set, because its only site-wide
-  link comes from that excluded, unreachable page. §2's "anywhere in the crawl" makes
-  this correct by the letter and wrong in effect. Undecided.
+  `/plan-participant/online-access/` from the orphan set, because its only site-wide link
+  comes from that excluded, unreachable page. §2's "anywhere in the crawl" makes this
+  correct by the letter and wrong in effect.
+
+Resolved and no longer open: every homepage was a soft orphan by the old letter (12
+inbound header-logo links, empty anchor, all boilerplate). With the class gone the
+crawl-root exception is no longer load-bearing, though a crawl root is still never an
+orphan.
 
 Excluded-class detection is **phase 1, not later**. Measured evidence: ~10% of
 tidewatermg.com's sitemap is non-content (86 `bricks_template`, 164 taxonomy
@@ -278,6 +296,22 @@ first block at request ~155**, with `retry-after: 3600` — a **one hour** IP ba
 Short bursts pass regardless of rate (20 req at 40/s was fine), so it is a
 rate-over-window limit, not a burst limit. Blocks are per-IP and per-host.
 
+**Measured 2026-08-20 (step 6): `X-Robots-Tag` exists on this estate.**
+`403bplan.net/wp-json/` answers 200 with `x-robots-tag: noindex`. It is a response header,
+so `extractPage` cannot see it and step 2 deferred it to the crawler; `pages.indexable`
+must therefore be `meta robots` and this header together. No _page_ carrying it has been found yet — the
+`noindex` pages measured so far declare it in the body (Yoast) — so the header is handled
+because it is cheap and its absence would silently manufacture orphans, not because a
+page needing it has been seen.
+
+**Also measured: an apex/`www` mismatch in the registry doubles a crawl.** `normalizeUrl`
+collapses aliases, so a 301 from the registry's canonical host to the host the server
+actually serves names the _same_ node; the crawler follows it inside one page fetch rather
+than recording it, because recording it would store every page of such a site as a 301 to
+itself and never read a body. The cost is one extra request per page, paced by the same
+per-host limiter — so on a site whose canonical host is wrong, a 16.5-hour crawl becomes
+33 hours. `CrawlResult.aliasHops` counts them; nothing stores the count yet.
+
 Requirements:
 
 - Default **~1 req/s per host**; per-site override in the curation overlay.
@@ -317,6 +351,19 @@ Verification splits three ways, and only one third of it is ours to build:
 page and records its status code, so a broken internal link is a join, not a request.
 The exception is non-HTML internal targets (PDFs, media) the crawler does not fetch;
 those go through the same path as external.
+
+**Measured 2026-08-20 (step 6), and that exception earns its keep twice over.** Crawling
+403bplan.net's 17 internal `/wp-content/uploads/*.pdf` links took the run from 13 requests
+to 30 — **+131%** on a site of 13 pages, against a per-host rate limit where requests are
+the scarce resource — and diluted the boilerplate denominator until three real soft
+orphans read as `linked` (see §2). The crawler therefore skips a discovered URL whose
+extension names a media or document type, records it on the frontier as `skipped` with
+the extension as the reason, and leaves the status to this section's checker. Two limits
+of the rule, both deliberate: it applies to _discovered_ URLs only, so it can never drop
+an inventory URL and can never hide an orphan; and an extension nobody listed is still
+fetched, because the content type is then the only thing that can tell (`.pdf` is the only
+media extension any of the 20 checked-in captures uses in an `<a href>`, so the list is
+one measurement plus the file formats this section already names).
 
 **External links are checked once, centrally, and shared across all 165 sites** via a
 URL-keyed table with a TTL. This is the single strongest argument for centralisation:
@@ -361,7 +408,7 @@ links            id, crawl_id, from_page_id, to_url_normalized, to_page_id,
                  anchor, rel, is_external, is_boilerplate
 external_urls    url_normalized, last_checked, status_code, unverified  -- shared, TTL
 
-crawl_metrics    crawl_id, orphans, soft_orphans, excluded, broken, external, ...
+crawl_metrics    crawl_id, orphans, excluded, broken, external, ...
 crawl_diffs      from_crawl_id, to_crawl_id, kind, url, detail
 ```
 
@@ -429,7 +476,7 @@ names.
 degrade into hairballs past a few hundred nodes, and websites are the worst case
 because global nav makes nearly every page link to nearly every other. Primary views:
 
-1. **Sorted tables** — orphans, soft orphans, broken links by blast radius. The
+1. **Sorted tables** — orphans, broken links by blast radius. The
    deliverable.
 2. **Treemap / icicle** of URL hierarchy, coloured by inbound count or orphan status.
    "Site shape at a glance", scales to thousands.
@@ -498,6 +545,18 @@ probed for `/wp-json/wp/v2/types`. Raw output in `census.json`. Rate limits meas
 by ramped probing of whyaim.com until Wordfence returned 503.
 
 ## 15. Open
+
+- **Settled 2026-08-20 — templated sites are sampled, never fully crawled.**
+  `agent.familyfirstlife.com` is 59,363 pages that are one page with a per-agent
+  substitution, so exhaustive crawling buys nothing for 16.5 hours of request budget.
+  Such a site gets `crawler_mode = 'sample'` with a page ceiling, and the consequence is
+  stated rather than hidden: **orphans cannot be computed from a sample**, because orphan detection is a set difference against the
+  whole truth source. A sampled site therefore reports `orphans = NULL` with the reason
+  "sampled by policy" — never 0, and never a coverage _failure_ either, since the
+  shortfall is deliberate. Broken links and structure are still checked on the sample.
+  Step 5's coverage gate must recognise the mode instead of refusing forever. Which other
+  hosts are templated is unmeasured; the census cannot tell a template from a content
+  site.
 
 - Are the ~23 sitemap-less, REST-less hosts that look like real sites in scope?
   (The other ~24 are planenroll funnels, rate calculators and APIs — presumed out.)

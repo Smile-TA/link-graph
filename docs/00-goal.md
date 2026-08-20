@@ -45,9 +45,11 @@ do on its own.
 
 ## The five questions it answers
 
-1. **What exists that nothing links to?** — true orphans (published, zero inbound),
-   soft orphans (reachable only from nav/footer, never from content), separated from
-   pages intentionally excluded via `noindex` or canonical.
+1. **What exists that nothing links to?** — true orphans: published, in the CMS, zero
+   inbound links anywhere in the crawl, separated from pages intentionally excluded via
+   `noindex` or canonical. (A "soft orphan" class was specified and then dropped in
+   August 2026: on real data its verdict depended on which URLs the crawler chose to
+   fetch, so it could not carry a report anyone acts on. See PRD §2.)
 2. **What's broken, and how bad is it?** — broken links ranked by blast radius: how
    many pages point at each one.
 3. **How is this site actually shaped?** — page relationships and site structure,
