@@ -226,6 +226,51 @@ describe("formatReport", () => {
   });
 });
 
+/**
+ * The printed line and the exit code have to agree. Exit 3 for a provably short
+ * inventory (PRD §15, decided 2026-08-25) would otherwise sit under a table headed
+ * "none — every URL in this site's truth source has at least one inbound internal
+ * link", which is the clean bill of health the code is refusing to give.
+ */
+describe("formatReport when a source was lost", () => {
+  const lostRest = (over = {}): CrawlReport =>
+    report({
+      metrics: metrics({ orphans: 0, ...over }),
+      orphans: [],
+      truth: {
+        ...report().truth,
+        rest: null,
+        findings: [{ kind: "rest-unusable", detail: "HTTP 403" }],
+      },
+    });
+
+  it("does not call zero orphans a clean site", () => {
+    const out = formatReport(lostRest());
+    expect(out).not.toMatch(/Orphans\s+none —/);
+    expect(out).toMatch(/Orphans\s+0 of an inventory that is short/);
+    // The reader is told which source is missing, not merely that one is.
+    expect(out).toContain("rest-unusable");
+  });
+
+  it("says the same of a non-zero count, which is also only of what was read", () => {
+    const out = formatReport(lostRest({ orphans: 4 }));
+    expect(out).toMatch(/Orphans\s+4 of an inventory that is short/);
+    expect(out).not.toMatch(/Orphans\s+4 — listed below/);
+  });
+
+  it("leaves an intact inventory's wording alone", () => {
+    const intact = report({
+      metrics: metrics({ orphans: 0 }),
+      orphans: [],
+      truth: {
+        ...report().truth,
+        findings: [{ kind: "sitemap-invisible", detail: "28 page(s)" }],
+      },
+    });
+    expect(formatReport(intact)).toMatch(/Orphans\s+none —/);
+  });
+});
+
 describe("reportProblem", () => {
   it("passes a report whose table and count agree", () => {
     expect(reportProblem(report())).toBeNull();

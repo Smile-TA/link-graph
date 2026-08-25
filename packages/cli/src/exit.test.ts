@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { PartialCrawlError } from "@link-graph/crawl";
 import type { CrawlMetricsInput } from "@link-graph/db";
 import { EXIT, exitCodeForFailure, exitCodeForReport, UsageError } from "./exit.js";
-import type { CrawlReport } from "./report.js";
+import type { TruthFindingKind } from "@link-graph/truth";
+import { inventoryIsProvablyIncomplete, type CrawlReport } from "./report.js";
 import { someMetrics, someReport } from "./testing/report.js";
 
 const reportWith = (metrics: Partial<CrawlMetricsInput>): CrawlReport =>
@@ -41,6 +42,100 @@ describe("exitCodeForReport", () => {
       expect(code, reason).toBe(EXIT.undetectable);
       expect(code, reason).not.toBe(0);
     }
+  });
+});
+
+/**
+ * Decided 2026-08-25 (PRD §15). A resolution that lost one of its two sources still
+ * produced an inventory, and the orphan set difference is against **that** — so the run
+ * would otherwise exit 0 under a code documented as "the table printed is the whole
+ * site". Measured shape: REST answers 403 (`rest-unusable`), the sitemap answers, and on
+ * integrity.com the difference is taken against 96 URLs instead of 124 with the other 28
+ * never mentioned — up to 28 real orphans unreported by a run calling itself clean.
+ *
+ * The split is by what each finding *means*, not by severity in the abstract: a source
+ * that could not be read makes the inventory provably short, while sources that were
+ * both read and merely disagree do not.
+ */
+describe("inventoryIsProvablyIncomplete", () => {
+  const incomplete: TruthFindingKind[] = [
+    "rest-unusable",
+    "rest-incomplete",
+    "rest-total-mismatch",
+    "sitemap-incomplete",
+  ];
+  const complete: TruthFindingKind[] = [
+    // A site with nothing published is not a failure to read REST (step 5).
+    "rest-empty",
+    // The content was read; the status was merely recorded. `wp-sitemap-posts-page-30`
+    // answers 404 with 1,363 valid URLs, and content decides (step 5).
+    "sitemap-degraded",
+    // Both sources were read and disagree. That is `sitemap-invisible` arithmetic, an
+    // orthogonal axis to the orphan question, not a hole in the inventory.
+    "sitemap-invisible",
+    "rest-missing",
+    // Bookkeeping about URLs the inventory should not have listed anyway.
+    "dropped-url",
+    "duplicate-url",
+  ];
+
+  for (const kind of incomplete) {
+    it(`treats ${kind} as a provably short inventory`, () => {
+      expect(inventoryIsProvablyIncomplete([{ kind, detail: "d" }])).toBe(true);
+    });
+  }
+
+  for (const kind of complete) {
+    it(`does not treat ${kind} as a short inventory`, () => {
+      expect(inventoryIsProvablyIncomplete([{ kind, detail: "d" }])).toBe(false);
+    });
+  }
+
+  it("is false with no findings at all, and true if any one of many qualifies", () => {
+    expect(inventoryIsProvablyIncomplete([])).toBe(false);
+    expect(
+      inventoryIsProvablyIncomplete([
+        { kind: "duplicate-url", detail: "d" },
+        { kind: "rest-unusable", detail: "HTTP 403" },
+        { kind: "dropped-url", detail: "d" },
+      ]),
+    ).toBe(true);
+  });
+});
+
+describe("exitCodeForReport with a degraded resolution", () => {
+  const withFindings = (kinds: TruthFindingKind[], over = {}): CrawlReport =>
+    someReport({
+      metrics: someMetrics({ orphans: 4, ...over }),
+      orphans: [],
+      truth: {
+        ...someReport().truth,
+        findings: kinds.map((kind) => ({ kind, detail: "d" })),
+      },
+    });
+
+  it("is 3 when a source was lost, even though a count was produced", () => {
+    const code = exitCodeForReport(withFindings(["rest-unusable"]));
+    expect(code).toBe(EXIT.undetectable);
+    expect(code).not.toBe(EXIT.ok);
+  });
+
+  it("stays 0 when both sources were read and merely disagree", () => {
+    expect(exitCodeForReport(withFindings(["sitemap-invisible", "rest-missing"]))).toBe(
+      EXIT.ok,
+    );
+  });
+
+  /** An unknown count already exits 3; a lost source must not downgrade that to 0. */
+  it("stays 3 when the count is unknown and a source was also lost", () => {
+    expect(
+      exitCodeForReport(
+        withFindings(["rest-incomplete"], {
+          orphans: null,
+          orphansUnknownReason: "sampled",
+        }),
+      ),
+    ).toBe(EXIT.undetectable);
   });
 });
 

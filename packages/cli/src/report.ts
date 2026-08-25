@@ -19,12 +19,57 @@ import type {
   OrphansUnknownReason,
   TruthSource,
 } from "@link-graph/db";
-import type { TruthFinding, TruthSourceKind } from "@link-graph/truth";
+import type { TruthFinding, TruthFindingKind, TruthSourceKind } from "@link-graph/truth";
 
 export interface OrphanRow {
   readonly urlNormalized: string;
   /** `null` = the page was never fetched, which is not the same as 200. */
   readonly statusCode: number | null;
+}
+
+/**
+ * Whether these findings mean the inventory the orphan set difference was taken against
+ * is **provably short of the site** — decided 2026-08-25 (PRD §15).
+ *
+ * The split is by what each finding means, not by severity in the abstract. A source
+ * that could not be read leaves URLs nobody enumerated, and a page missing from the
+ * inventory cannot appear in the difference, so an orphan on it is unreportable. Two
+ * sources that were both read and merely disagree leave no such hole: that disagreement
+ * is `sitemap-invisible` arithmetic (PRD §2), an axis orthogonal to the orphan question.
+ *
+ * Exhaustive by construction: `satisfies Record<TruthFindingKind, …>` makes a finding
+ * kind added to `packages/truth` a compile error here rather than a silent `intact`,
+ * which is the direction that would quietly restore the 0 this rule exists to stop.
+ */
+const INVENTORY = {
+  /** REST answered but was blocked or malformed — nobody knows what it would list. */
+  "rest-unusable": "short",
+  /** Enumeration began and could not finish, so what it did not reach is unknown. */
+  "rest-incomplete": "short",
+  /** `X-WP-Total` and the URLs pagination yielded disagree: some were never seen. */
+  "rest-total-mismatch": "short",
+  /** A child sitemap could not be read, so its URLs are missing from the inventory. */
+  "sitemap-incomplete": "short",
+  /** A site with nothing published. Read successfully; there was nothing to list. */
+  "rest-empty": "intact",
+  /**
+   * The content was read and only the status was recorded — step 5's measured rule.
+   * `wp-sitemap-posts-page-30.xml` answers 404 with a valid 1,363-URL urlset, so a
+   * degraded status says nothing about completeness.
+   */
+  "sitemap-degraded": "intact",
+  /** Both sources read, and they disagree. Orthogonal to the orphan question (PRD §2). */
+  "sitemap-invisible": "intact",
+  "rest-missing": "intact",
+  /** URLs the inventory should not have listed: off-site, or not a crawlable page. */
+  "dropped-url": "intact",
+  "duplicate-url": "intact",
+} satisfies Record<TruthFindingKind, "short" | "intact">;
+
+export function inventoryIsProvablyIncomplete(
+  findings: readonly TruthFinding[],
+): boolean {
+  return findings.some((finding) => INVENTORY[finding.kind] === "short");
 }
 
 export interface CrawlReport {
@@ -261,6 +306,17 @@ function orphanSummary(report: CrawlReport): string {
       "Orphans",
       `unknown — ${orphansUnknownReason}: ` +
         unknownReasonSentence(orphansUnknownReason, report.truth.kind),
+    );
+  }
+  // Exit 3 is returned for this case (`exit.ts`), so the line a person reads must not
+  // claim more than the code does. "none" in particular would be a clean bill of health
+  // for a site whose inventory nobody finished reading.
+  if (inventoryIsProvablyIncomplete(report.truth.findings)) {
+    return prosaicRow(
+      "Orphans",
+      `${orphans} of an inventory that is short of the site — a source could not be ` +
+        `read, so a page missing from the inventory cannot appear in this count. See ` +
+        `the findings below`,
     );
   }
   if (orphans === 0) {

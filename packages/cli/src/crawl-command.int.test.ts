@@ -332,17 +332,18 @@ describe("link-graph crawl", () => {
   });
 
   /**
-   * **A resolution that lost one of its two sources still exits 0, and that is the
-   * sharpest open question this command leaves.** WP REST is blocked here and the sitemap
-   * answers, so the inventory is the sitemap's view of the site — on 403bplan.net the two
-   * agree exactly, but on integrity.com REST lists 124 pages and the sitemap 96, so the
-   * same shape would difference against 96 and never mention the other 28. The
-   * degradation is printed as a finding and reaches neither the exit code nor the table.
-   * Which findings are severe enough to change the verdict is a reporting decision step 5
-   * deferred with `findings` itself; this test records today's behaviour so that changing
-   * it is a decision rather than an accident.
+   * **A resolution that lost one of its two sources exits 3, decided 2026-08-25
+   * (PRD §15).** WP REST is blocked here and the sitemap answers, so the inventory is the
+   * sitemap's view of the site. On 403bplan.net the two list the same 13 URLs, so the
+   * four orphans are unchanged and the table is right — but on integrity.com REST lists
+   * 124 pages and the sitemap 96, so the same shape differences against 96 and says
+   * nothing about the other 28. The count is therefore not of the site, and the code that
+   * means "not an answer for the whole site" is the one to return.
+   *
+   * This test previously pinned the opposite (exit 0) precisely so that changing it would
+   * be a decision rather than an accident. It was.
    */
-  it("prints a lost truth source as a finding, and still exits 0", async () => {
+  it("exits 3 when a truth source was lost, and says so in the table", async () => {
     // Wordfence answering 403 to /wp-json/ is the measured shape (PRD §5.1).
     const server = await serve((path) =>
       path.startsWith("/wp-json/")
@@ -352,7 +353,8 @@ describe("link-graph crawl", () => {
     const site = await makeSite();
     const result = await run(site, server);
 
-    expect(result.code).toBe(EXIT.ok);
+    expect(result.code).toBe(EXIT.undetectable);
+    expect(result.code).not.toBe(EXIT.ok);
     expect((await findSiteBySlug(db.pool, site.siteId))?.truthSource).toBe("sitemap");
     expect(result.stdout).toContain("rest-unusable");
     expect(result.stdout).toContain("HTTP 403");
@@ -360,8 +362,11 @@ describe("link-graph crawl", () => {
     // rather than printing a zero for it.
     expect(result.stdout).toContain("(REST not read, sitemap 13)");
     expect(result.stdout).toMatch(/only as complete as the inventory/);
-    // The four orphans are unchanged: on this site the two sources list the same 13 URLs.
+    // The table still lists what it found — the pages are real orphans, and suppressing
+    // them would trade a false clean bill of health for a false empty one.
     expect(result.stdout).toMatch(/Orphans .*\(4\)/);
+    // But the summary line agrees with the exit code rather than reading as complete.
+    expect(result.stdout).toMatch(/Orphans\s+4 of an inventory that is short/);
   });
 
   /**

@@ -7,7 +7,7 @@
  * orphan question has its own non-zero code, so that a caller can tell "the site is
  * clean" from "the site could not be checked" without parsing prose.
  */
-import type { CrawlReport } from "./report.js";
+import { inventoryIsProvablyIncomplete, type CrawlReport } from "./report.js";
 
 export const EXIT = {
   /** The orphan question was answered. The table printed is the whole site. */
@@ -26,10 +26,12 @@ export const EXIT = {
    */
   failed: 2,
   /**
-   * The crawl finished and the orphan count is unknown — no truth source, or a sample
-   * (PRD §2's Undetectable, §15). A coverage gap, never zero orphans. Non-zero even for
-   * `sampled`, which is deliberate rather than a failure: deliberate or not, it is not
-   * an answer, and a caller that reads only this code must not record it as one.
+   * The crawl finished and the orphan question was **not** answered for the whole site.
+   * Three causes, one code: no truth source, a sample (PRD §2's Undetectable, §15), or
+   * an inventory that a lost source made provably short (decided 2026-08-25, PRD §15).
+   * A coverage gap, never zero orphans. Non-zero even for `sampled`, which is deliberate
+   * rather than a failure: deliberate or not, it is not an answer, and a caller reading
+   * only this code must not record it as one.
    */
   undetectable: 3,
 } as const;
@@ -47,8 +49,16 @@ export class UsageError extends Error {
   }
 }
 
+/**
+ * The orphan count is an answer only when it was counted **and** counted against the
+ * whole inventory. Both tests land on the same code, because a caller reading only the
+ * exit status needs one question answered — "may I record this as the site's orphan
+ * count?" — and the printed report says which of the two it was.
+ */
 export function exitCodeForReport(report: CrawlReport): number {
-  return report.metrics.orphansUnknownReason === null ? EXIT.ok : EXIT.undetectable;
+  if (report.metrics.orphansUnknownReason !== null) return EXIT.undetectable;
+  if (inventoryIsProvablyIncomplete(report.truth.findings)) return EXIT.undetectable;
+  return EXIT.ok;
 }
 
 export function exitCodeForFailure(error: unknown): number {
