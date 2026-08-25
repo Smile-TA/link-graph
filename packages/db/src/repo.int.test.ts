@@ -12,13 +12,20 @@ import { insertCrawlDiff, listCrawlDiffs } from "./repo/crawl-diffs.js";
 import {
   findCrawlMetrics,
   upsertCrawlMetrics,
+  ORPHANS_UNKNOWN_REASONS,
   type CrawlMetricsInput,
+  type OrphansUnknownReason,
 } from "./repo/crawl-metrics.js";
 import { findCrawl, insertCrawl } from "./repo/crawls.js";
 import { findExternalUrl, upsertExternalUrl } from "./repo/external-urls.js";
 import { insertLinks } from "./repo/links.js";
 import { insertRegistryHealth, listRegistryHealth } from "./repo/registry-health.js";
-import { findSiteBySlug, upsertSite } from "./repo/sites.js";
+import {
+  findSiteBySlug,
+  upsertSite,
+  type CrawlScope,
+  type SiteInput,
+} from "./repo/sites.js";
 import { createTempDatabase, type TempDatabase } from "./testing/temp-database.js";
 
 let db: TempDatabase;
@@ -103,10 +110,46 @@ describe("sites", () => {
       enabled: false,
       truthSource: null,
       crawlerMode: "http",
+      crawlScope: "full",
+      sampleCeiling: null,
       rateLimit: 1,
       ignorePaths: [],
     });
     expect(site.truthSource).toBeNull();
+  });
+
+  /**
+   * PRD §15 and `008_sample_scope.sql`. `sample` with no ceiling is a full crawl
+   * wearing the label — it would run to 59,363 pages on agent.familyfirstlife.com while
+   * suppressing the orphan count as "sampled" — and a ceiling on a `full` site is a
+   * limit nothing enforces, which reads like one.
+   */
+  it("refuses a sampled site with no ceiling, and a ceiling on a full crawl", async () => {
+    const site = (scope: CrawlScope, ceiling: number | null): SiteInput => ({
+      siteId: "templated-com",
+      canonicalHost: "templated.com",
+      aliases: ["templated.com"],
+      stageHost: null,
+      enabled: true,
+      truthSource: "rest",
+      crawlerMode: "http",
+      crawlScope: scope,
+      sampleCeiling: ceiling,
+      rateLimit: 1,
+      ignorePaths: [],
+    });
+    await expect(upsertSite(db.pool, site("sample", null))).rejects.toThrow(
+      /sites_sample_ceiling_iff_sample/,
+    );
+    await expect(upsertSite(db.pool, site("full", 500))).rejects.toThrow(
+      /sites_sample_ceiling_iff_sample/,
+    );
+    await expect(upsertSite(db.pool, site("sample", 0))).rejects.toThrow(
+      /sample_ceiling/,
+    );
+    const sampled = await upsertSite(db.pool, site("sample", 500));
+    expect(sampled.crawlScope).toBe("sample");
+    expect(sampled.sampleCeiling).toBe(500);
   });
 });
 
@@ -235,7 +278,7 @@ describe("crawl_metrics", () => {
   const metrics = (overrides: Partial<CrawlMetricsInput> = {}): CrawlMetricsInput => ({
     crawlId,
     orphans: 3,
-    softOrphans: 1,
+    orphansUnknownReason: null,
     linked: 40,
     excluded: 12,
     notInTruthSource: 2,
@@ -258,8 +301,8 @@ describe("crawl_metrics", () => {
     await upsertCrawlMetrics(db.pool, metrics());
     const second: CrawlMetricsInput = {
       crawlId,
-      orphans: 2,
-      softOrphans: 4,
+      orphans: null,
+      orphansUnknownReason: "sampled",
       linked: 41,
       excluded: 13,
       notInTruthSource: 3,
@@ -275,21 +318,45 @@ describe("crawl_metrics", () => {
   });
 
   /**
-   * PRD §2: a site with no truth source reports the orphan counters as unknown, never as
-   * zero. 005_analysis.sql keeps the two null together, because one known and the other
-   * not is a bookkeeping bug rather than a fact about a site.
+   * PRD §2 and §15: an orphan count this crawl cannot produce is null, never zero — and
+   * never null without saying why, because "no inventory to difference against" and
+   * "sampled by policy" are different facts with different remedies.
+   * `007_drop_soft_orphan.sql` makes it an equivalence, so both halves are refused.
    */
-  it("stores unknown orphan counters as null, and refuses one null without the other", async () => {
+  it("refuses a null orphan count with no reason, and a reason beside a real count", async () => {
     await expect(upsertCrawlMetrics(db.pool, metrics({ orphans: null }))).rejects.toThrow(
-      /crawl_metrics_orphans_known_together/,
+      /crawl_metrics_orphans_null_has_reason/,
     );
-    await upsertCrawlMetrics(db.pool, metrics({ orphans: null, softOrphans: null }));
-    expect(await findCrawlMetrics(db.pool, crawlId)).toMatchObject({
-      orphans: null,
-      softOrphans: null,
-      // Still counted: a noindex page is excluded whether or not an inventory exists.
-      excluded: 12,
-    });
+    await expect(
+      upsertCrawlMetrics(
+        db.pool,
+        metrics({ orphans: 3, orphansUnknownReason: "sampled" }),
+      ),
+    ).rejects.toThrow(/crawl_metrics_orphans_null_has_reason/);
+  });
+
+  it("stores each reason an orphan count can be unknown", async () => {
+    for (const reason of ORPHANS_UNKNOWN_REASONS) {
+      await upsertCrawlMetrics(
+        db.pool,
+        metrics({ orphans: null, orphansUnknownReason: reason }),
+      );
+      expect(await findCrawlMetrics(db.pool, crawlId)).toMatchObject({
+        orphans: null,
+        orphansUnknownReason: reason,
+        // Still counted: a noindex page is excluded whether or not an inventory exists.
+        excluded: 12,
+      });
+    }
+  });
+
+  it("refuses a reason outside the vocabulary", async () => {
+    await expect(
+      upsertCrawlMetrics(db.pool, {
+        ...metrics({ orphans: null }),
+        orphansUnknownReason: "partial" as OrphansUnknownReason,
+      }),
+    ).rejects.toThrow(/orphans_unknown_reason/);
   });
 });
 

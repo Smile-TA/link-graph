@@ -5,20 +5,40 @@
  */
 import type { Queryable } from "../pool.js";
 
+/**
+ * Why a crawl's orphan count is unknown (`007_drop_soft_orphan.sql`). Two different
+ * facts with two different remedies, which a bare NULL cannot tell apart:
+ *
+ * - `no_truth_source` — the site has no inventory to take the set difference against
+ *   (PRD §2, Undetectable). A content decision, or a site nobody can check.
+ * - `sampled` — the crawl covered a ceiling rather than the whole site by policy
+ *   (PRD §15), so the absence of an inbound link is evidence of nothing. Deliberate,
+ *   and not a coverage failure.
+ */
+export const ORPHANS_UNKNOWN_REASONS = ["no_truth_source", "sampled"] as const;
+export type OrphansUnknownReason = (typeof ORPHANS_UNKNOWN_REASONS)[number];
+
 export interface CrawlMetricsInput {
   readonly crawlId: number;
   /**
-   * `null` — not zero — when the site has no truth source, because there is then no
-   * inventory to difference against and the answer is unknown (PRD §2, Undetectable).
-   * The two are null together, which a CHECK enforces.
+   * `null` — not zero — when this crawl cannot answer the orphan question, in which
+   * case `orphansUnknownReason` says why. A CHECK ties the two together in both
+   * directions, so a NULL count is never unexplained and a reason never sits beside a
+   * real number.
    */
   readonly orphans: number | null;
-  readonly softOrphans: number | null;
+  readonly orphansUnknownReason: OrphansUnknownReason | null;
   readonly linked: number;
   readonly excluded: number;
   readonly notInTruthSource: number;
   readonly undetectable: number;
-  /** Pages with no path from the homepage. A superset of the orphans. */
+  /**
+   * Pages with no path from the homepage **over the edges this crawl saw**. A superset
+   * of the orphans on a full crawl. On a sampled one it stays a count rather than
+   * becoming unknown — PRD §15 keeps structure checked on the sample — but it is then a
+   * statement about the sampled graph, not about the site: a page can be unreachable
+   * here only because the crawl never fetched the page that links to it.
+   */
   readonly unreachable: number;
   /** Internal edges to a page of this crawl that did not serve. */
   readonly broken: number;
@@ -26,12 +46,16 @@ export interface CrawlMetricsInput {
   readonly internalUnresolved: number;
   /** Distinct external target URLs. */
   readonly external: number;
-  /** The N `softOrphans` was computed at (PRD §6, §15). */
+  /**
+   * The N `links.is_boilerplate` was computed at (PRD §6). A display parameter since
+   * the soft-orphan class was dropped — no page class depends on it — but still needed
+   * to compare one crawl's edge kinds with the next one's.
+   */
   readonly boilerplateThresholdPct: number;
 }
 
 const COLUMNS = `crawl_id AS "crawlId", orphans,
-  soft_orphans AS "softOrphans", linked, excluded,
+  orphans_unknown_reason AS "orphansUnknownReason", linked, excluded,
   not_in_truth_source AS "notInTruthSource", undetectable, unreachable, broken,
   internal_unresolved AS "internalUnresolved", external,
   boilerplate_threshold_pct AS "boilerplateThresholdPct"`;
@@ -43,13 +67,15 @@ export async function upsertCrawlMetrics(
 ): Promise<void> {
   await db.query(
     `INSERT INTO crawl_metrics
-       (crawl_id, orphans, soft_orphans, linked, excluded, not_in_truth_source,
+       (crawl_id, orphans, orphans_unknown_reason, linked, excluded,
+        not_in_truth_source,
         undetectable, unreachable, broken, internal_unresolved, external,
         boilerplate_threshold_pct)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT (crawl_id) DO UPDATE SET
        orphans = excluded.orphans,
-       soft_orphans = excluded.soft_orphans, linked = excluded.linked,
+       orphans_unknown_reason = excluded.orphans_unknown_reason,
+       linked = excluded.linked,
        excluded = excluded.excluded,
        not_in_truth_source = excluded.not_in_truth_source,
        undetectable = excluded.undetectable, unreachable = excluded.unreachable,
@@ -60,7 +86,7 @@ export async function upsertCrawlMetrics(
     [
       metrics.crawlId,
       metrics.orphans,
-      metrics.softOrphans,
+      metrics.orphansUnknownReason,
       metrics.linked,
       metrics.excluded,
       metrics.notInTruthSource,

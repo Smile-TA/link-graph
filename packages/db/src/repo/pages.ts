@@ -18,15 +18,19 @@ import type { Queryable } from "../pool.js";
 export const PAGE_CLASSES = [
   /** Something other than the nav or the footer links here — the ordinary case. */
   "linked",
-  /** Inbound edges exist and every one of them is boilerplate (PRD §2). */
-  "soft_orphan",
   /** In the truth source, includable, and nothing links here at all (PRD §2). */
   "orphan",
   /** Not an orphan by intent: noindex, canonical elsewhere, a redirect, ignore_paths. */
   "excluded",
   /** Crawled, but the inventory does not list it, so the question does not apply. */
   "not_in_truth_source",
-  /** No truth source, so the orphan question cannot be answered at all (PRD §2). */
+  /**
+   * The orphan question cannot be answered for this page (PRD §2): the site has no
+   * truth source, or the crawl was a sample and the absence of an inbound edge is
+   * evidence of nothing. Which of the two lives once, on
+   * `crawl_metrics.orphans_unknown_reason` — it is a property of the crawl, never of
+   * the page.
+   */
   "undetectable",
 ] as const;
 export type PageClass = (typeof PAGE_CLASSES)[number];

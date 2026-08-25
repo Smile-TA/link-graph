@@ -80,7 +80,7 @@ that is 30% noise gets ignored within two weeks.
 | **True orphan**       | Present in the truth source, published, indexable — and zero inbound internal links found anywhere in the crawl.                                                                                                               |
 | **Sitemap-invisible** | Present in WP REST but absent from the sitemap. Distinct class: often intentional, sometimes an SEO plugin misconfiguration.                                                                                                   |
 | **Excluded**          | Not an orphan by intent: `noindex`, canonical pointing elsewhere, a redirect target, or matched by the site's `ignorePaths`. Counted and shown separately, never in the orphan list.                                           |
-| **Undetectable**      | Site has no truth source. Reported as a coverage gap, never as zero orphans.                                                                                                                                                   |
+| **Undetectable**      | The orphan question cannot be answered here: the site has no truth source, or the crawl was a sample (§15) and absence of an inbound edge proves nothing. Reported as a coverage gap with its reason, never as zero orphans.   |
 | **Boilerplate edge**  | A link whose (target, anchor) pair appears on more than N% of crawled pages. Statistical, not structural — this also catches footer widgets, breadcrumbs and related-post modules that a nav-menu-based definition would miss. |
 | **Contextual edge**   | Any edge that is not boilerplate.                                                                                                                                                                                              |
 | **Blast radius**      | For a broken link: the number of distinct pages linking to it.                                                                                                                                                                 |
@@ -131,6 +131,15 @@ Resolved and no longer open: every homepage was a soft orphan by the old letter 
 inbound header-logo links, empty anchor, all boilerplate). With the class gone the
 crawl-root exception is no longer load-bearing, though a crawl root is still never an
 orphan.
+
+**A sample cannot answer the orphan question per page either (step 5.5).** §15's decision
+is written about the crawl-level count, but `analyse` also writes `pages.class` and the
+phase-1 tables read it. On a sampled crawl a truth-source page with zero inbound edges is
+overwhelmingly likely to be linked from a page the sample never fetched, so calling it an
+orphan puts false positives in front of a reader while the crawl total honestly reads
+"unknown". One inbound edge still proves `linked` — positive evidence survives sampling;
+proving _absence_ does not. A sampled page with no inbound edge is therefore
+`undetectable`, and the reason it is unknown lives once, on the crawl.
 
 Excluded-class detection is **phase 1, not later**. Measured evidence: ~10% of
 tidewatermg.com's sitemap is non-content (86 `bricks_template`, 164 taxonomy
@@ -549,14 +558,25 @@ by ramped probing of whyaim.com until Wordfence returned 503.
 - **Settled 2026-08-20 — templated sites are sampled, never fully crawled.**
   `agent.familyfirstlife.com` is 59,363 pages that are one page with a per-agent
   substitution, so exhaustive crawling buys nothing for 16.5 hours of request budget.
-  Such a site gets `crawler_mode = 'sample'` with a page ceiling, and the consequence is
+  Such a site is crawled to a page ceiling, and the consequence is
   stated rather than hidden: **orphans cannot be computed from a sample**, because orphan detection is a set difference against the
   whole truth source. A sampled site therefore reports `orphans = NULL` with the reason
   "sampled by policy" — never 0, and never a coverage _failure_ either, since the
   shortfall is deliberate. Broken links and structure are still checked on the sample.
-  Step 5's coverage gate must recognise the mode instead of refusing forever. Which other
+  Step 5's coverage gate must recognise the scope instead of refusing forever. Which other
   hosts are templated is unmeasured; the census cannot tell a template from a content
   site.
+
+  **Amended 2026-08-24 (step 5.5), on the column rather than the decision.** This was
+  written as `crawler_mode = 'sample'`. `crawler_mode` is _which fetcher_ — `http` or
+  `playwright` (PRD §5) — and sampling is _how much of the site_; a third value there
+  would make "sample a Playwright site" unrepresentable. Sampling is therefore its own
+  axis, `sites.crawl_scope IN ('full', 'sample')` with `sample_ceiling`, paired by a
+  CHECK so that `sample` without a ceiling — a full crawl wearing the label — cannot be
+  written down. Nothing else about the decision changes. The NULL orphan count now
+  carries `crawl_metrics.orphans_unknown_reason`, because "no truth source" and "sampled
+  by policy" are different facts with different remedies and a bare NULL cannot say
+  which.
 
 - Are the ~23 sitemap-less, REST-less hosts that look like real sites in scope?
   (The other ~24 are planenroll funnels, rate calculators and APIs — presumed out.)

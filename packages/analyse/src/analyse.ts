@@ -31,7 +31,7 @@ import {
 } from "@link-graph/db";
 import {
   classifyPage,
-  hasTruthSource,
+  orphansUnknownReason,
   type PageClass,
   type SiteRules,
 } from "./classify.js";
@@ -108,9 +108,20 @@ export async function analyse(
   const homeUrl = homepageUrl(site);
   const siteRules: SiteRules = {
     truthSource: site.truthSource,
+    crawlScope: site.crawlScope,
     ignorePaths: site.ignorePaths,
   };
-  if (hasTruthSource(siteRules)) {
+  // What the orphan count is going to be, decided once and used twice: the gate below
+  // and the metrics row at the end must not disagree about whether this crawl can
+  // answer the orphan question.
+  const unknownReason = orphansUnknownReason(siteRules);
+  // The gate exists to stop a crawl of 1 page of 1,953 reporting `orphans: 0`. A crawl
+  // that is not going to report a number at all needs no such protection — and a
+  // sampled site would fail it forever by design, since covering 90% of a 59,363-page
+  // inventory is the thing sampling exists not to do (PRD §15). The shortfall is
+  // deliberate, so it is not a failure; `orphans_unknown_reason = 'sampled'` is how the
+  // reader learns of it, which is a stronger statement than a refused run.
+  if (unknownReason === null) {
     const problem = truthSourceCoverageProblem(
       await countTruthSourcePages(pool, crawlId),
       crawl.truthSourceUrls,
@@ -133,9 +144,10 @@ export async function analyse(
 
     // The row existing is not enough: reachability is measured from what the homepage
     // served, and a homepage the crawl never got a response for produces a complete,
-    // plausible, entirely wrong report — measured, on this fixture, as 4 orphans and 6
-    // soft orphans out of 13 with no error at all, because a root with no links makes
-    // every other page unreachable.
+    // plausible, entirely wrong report — measured on this fixture, under the taxonomy
+    // as it stood before 2026-08-20, as 4 orphans and 6 soft orphans out of 13 with no
+    // error at all, because a root with no links makes every other page unreachable.
+    // The class names have changed since; the failure has not.
     if (root.statusCode === null || root.statusCode < 200 || root.statusCode >= 300) {
       throw new Error(
         `analyse: crawl ${crawlId}'s homepage ${homeUrl} ` +
@@ -174,9 +186,11 @@ export async function analyse(
       );
     }
     if (links.unmarked > 0) {
-      // `count(*) FILTER (WHERE NOT is_boilerplate)` skips a NULL, so an unmarked edge
-      // is silently neither boilerplate nor contextual — it would understate the
-      // contextual count and manufacture soft orphans.
+      // No page class depends on `is_boilerplate` any more (the soft-orphan class was
+      // dropped), so this no longer guards the taxonomy — it guards the boilerplate
+      // pass itself. An edge left NULL is neither boilerplate nor contextual to every
+      // query that reads it, including PRD §9's section matrix, and a pass that
+      // silently skipped rows would otherwise leave no trace.
       throw new Error(
         `analyse: ${links.unmarked} link(s) of crawl ${crawlId} were left unmarked by ` +
           `the boilerplate pass`,
@@ -184,13 +198,14 @@ export async function analyse(
     }
 
     const count = (of: PageClass) => classes.filter((c) => c.class === of).length;
-    // PRD §2, Undetectable: with no truth source there is no inventory to difference
-    // against, so the two orphan counters are unknown. Null, never zero.
-    const detectable = hasTruthSource(siteRules);
+    // Null, never zero, and never without saying why (PRD §2, §15): no inventory to
+    // difference against, or a sample that never saw the whole of one. `classifyPage`
+    // reads the same rule, so `undetectable` holds exactly the pages this count is
+    // silent about.
     const metrics: CrawlMetricsInput = {
       crawlId,
-      orphans: detectable ? count("orphan") : null,
-      softOrphans: detectable ? count("soft_orphan") : null,
+      orphans: unknownReason === null ? count("orphan") : null,
+      orphansUnknownReason: unknownReason,
       linked: count("linked"),
       excluded: count("excluded"),
       notInTruthSource: count("not_in_truth_source"),

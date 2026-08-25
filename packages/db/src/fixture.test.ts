@@ -73,6 +73,8 @@ describe("parseCrawlFixture: what it accepts", () => {
     expect(fixture.site.siteId).toBe("lionstreet-com");
     expect(fixture.site.enabled).toBe(true);
     expect(fixture.site.crawlerMode).toBe("http");
+    expect(fixture.site.crawlScope).toBe("full");
+    expect(fixture.site.sampleCeiling).toBeNull();
     expect(fixture.site.rateLimit).toBe(1);
     expect(fixture.crawl.env).toBe("prod");
     expect(fixture.crawl.status).toBe("complete");
@@ -317,10 +319,70 @@ describe("parseCrawlFixture: what it refuses", () => {
     expect(() =>
       parseCrawlFixture(
         json((j) => {
-          pagesOf(j)[0]!.class = "soft_orphan";
+          pagesOf(j)[0]!.class = "undetectable";
         }),
       ),
     ).not.toThrow();
+  });
+
+  /**
+   * PRD §15: a templated site is sampled to a ceiling. `sample` with no ceiling is a
+   * full crawl wearing the label and a ceiling on a `full` site is a limit nothing
+   * enforces — `008_sample_scope.sql` refuses both, and so does the parser, so a wrong
+   * fixture fails with the fixture named rather than at INSERT time.
+   */
+  describe("crawl scope", () => {
+    it("accepts a sampled site with a ceiling", () => {
+      const fixture = parseCrawlFixture(
+        json((j) => {
+          siteOf(j).crawlScope = "sample";
+          siteOf(j).sampleCeiling = 500;
+        }),
+      );
+      expect(fixture.site.crawlScope).toBe("sample");
+      expect(fixture.site.sampleCeiling).toBe(500);
+    });
+
+    it("refuses a sampled site with no ceiling", () => {
+      expect(() =>
+        parseCrawlFixture(
+          json((j) => {
+            siteOf(j).crawlScope = "sample";
+          }),
+        ),
+      ).toThrow(/sampleCeiling/);
+    });
+
+    it("refuses a ceiling on a site that is crawled in full", () => {
+      expect(() =>
+        parseCrawlFixture(
+          json((j) => {
+            siteOf(j).sampleCeiling = 500;
+          }),
+        ),
+      ).toThrow(/sampleCeiling/);
+    });
+
+    it("refuses a ceiling of zero, which is not a sample of anything", () => {
+      expect(() =>
+        parseCrawlFixture(
+          json((j) => {
+            siteOf(j).crawlScope = "sample";
+            siteOf(j).sampleCeiling = 0;
+          }),
+        ),
+      ).toThrow(/sampleCeiling/);
+    });
+
+    it("refuses a scope outside the vocabulary", () => {
+      expect(() =>
+        parseCrawlFixture(
+          json((j) => {
+            siteOf(j).crawlScope = "partial";
+          }),
+        ),
+      ).toThrow(/crawlScope must be one of/);
+    });
   });
 
   it("refuses anything that is not an object", () => {

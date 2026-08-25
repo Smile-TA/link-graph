@@ -228,6 +228,10 @@ describe("loadFixture: every column, at a non-default value", () => {
       enabled: false,
       truthSource: "rest",
       crawlerMode: "playwright",
+      // Non-default, and the pair has to move together: 'full'/null are the SQL
+      // defaults, so a ceiling with no scope proves nothing about either column.
+      crawlScope: "sample",
+      sampleCeiling: 500,
       rateLimit: 0.5,
       ignorePaths: ["/wp-login.php", "/carrier-index/"],
     },
@@ -292,6 +296,8 @@ describe("loadFixture: every column, at a non-default value", () => {
       enabled: false,
       truthSource: "rest",
       crawlerMode: "playwright",
+      crawlScope: "sample",
+      sampleCeiling: 500,
       rateLimit: 0.5,
       ignorePaths: ["/wp-login.php", "/carrier-index/"],
     });

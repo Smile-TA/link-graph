@@ -73,22 +73,22 @@ async function depths(crawlId: number): Promise<Record<string, number | null>> {
  * The whole site, hand-derived. `/` is linked because it is the crawl root, and the four
  * orphans are in the sitemap with no `<a href>` anywhere on the site pointing at them.
  *
- * **The three soft orphans are not all the same case, and one of them is a false
- * positive of PRD §2 as written.** `/disclosures/` and `/terms-of-service/` are footer
- * links on all 13 pages and nothing else — soft orphans by any reading. `/contact-us/`
- * has two real in-content links, from the body of `/plan-participant/` and of
- * `/financial-advisor/`, and is still classified `soft_orphan`, because PRD §2's
- * boilerplate rule keys on the `(target, anchor)` pair and both of those links say
- * "Contact Us", the same as the header nav entry that appears on every page. So the pair
- * is site-wide, every edge into the page is boilerplate, and the contextual count is 0 —
- * while PRD §2's own definition of a soft orphan says "No contextual in-content link
- * anywhere". The two clauses disagree on this page. Asserted as the code behaves, which
- * is PRD §2's operational rule, and reported rather than quietly redefined.
+ * **Nine pages are `linked`, three of them by the rule change of 2026-08-20.**
+ * `/disclosures/` and `/terms-of-service/` are footer links on all 13 pages and nothing
+ * else; `/contact-us/` has two real in-content links, from the body of
+ * `/plan-participant/` and of `/financial-advisor/`, whose anchor text happens to match
+ * the header nav entry. All three were `soft_orphan` under the dropped rule, and the
+ * third was simply a false positive of it (PRD §2). All three are reachable by clicking
+ * a link on this site, which is what `linked` claims and all it claims.
+ *
+ * **The four orphans are unchanged by the drop, and that is the regression this table
+ * guards.** Zero inbound edges is zero at any threshold, so no frequency rule enters
+ * their verdict.
  */
 const EXPECTED_CLASSES: Record<string, string> = {
   "/": "linked",
-  "/contact-us/": "soft_orphan",
-  "/disclosures/": "soft_orphan",
+  "/contact-us/": "linked",
+  "/disclosures/": "linked",
   "/financial-advisor/": "linked",
   "/newsletter-signup/": "orphan",
   "/newsletters/": "orphan",
@@ -97,7 +97,7 @@ const EXPECTED_CLASSES: Record<string, string> = {
   "/plan-participant/fund-prospectuses/": "linked",
   "/plan-participant/online-access/": "orphan",
   "/plan-sponsor/": "linked",
-  "/terms-of-service/": "soft_orphan",
+  "/terms-of-service/": "linked",
   "/test-pay-button/": "orphan",
 };
 
@@ -110,8 +110,8 @@ describe("analyse over the real 403bplan.net crawl", () => {
     expect(metrics).toEqual({
       crawlId,
       orphans: 4,
-      softOrphans: 3,
-      linked: 6,
+      orphansUnknownReason: null,
+      linked: 9,
       excluded: 0,
       notInTruthSource: 0,
       undetectable: 0,
@@ -131,7 +131,6 @@ describe("analyse over the real 403bplan.net crawl", () => {
     // would otherwise look like a clean result.
     expect(
       (metrics.orphans ?? 0) +
-        (metrics.softOrphans ?? 0) +
         metrics.linked +
         metrics.excluded +
         metrics.notInTruthSource +
@@ -191,15 +190,35 @@ describe("analyse over the real 403bplan.net crawl", () => {
     expect(await findCrawlMetrics(db.pool, crawlId)).toEqual(first);
   });
 
-  it("honours the boilerplate threshold, and records the N it used", async () => {
-    const crawlId = await load(build403bplanCrawl());
-    // 5% of 13 pages is 0.65, so every (target, anchor) pair on 1 page or more counts
-    // as boilerplate — no edge is contextual, and every linked page becomes soft.
-    const metrics = await analyse(db.pool, crawlId, { boilerplateThresholdPct: 5 });
-    expect(metrics.boilerplateThresholdPct).toBe(5);
-    expect(metrics.softOrphans).toBe(8);
-    expect(metrics.linked).toBe(1); // the crawl root, and nothing else
-    expect(metrics.orphans).toBe(4); // an orphan has no edges to reclassify
+  /**
+   * The other half of the 2026-08-20 decision, and the reason PRD §15's open item on N
+   * lost its urgency: **N can no longer change any page's class.** At 5% every
+   * (target, anchor) pair on 1 of 13 pages or more is boilerplate, so all 240 edges are;
+   * at 100 none can be, since the rule is "more than N% of pages". Under the old rule
+   * that span was the difference between 1 `linked` page and 9. Now the two runs produce
+   * the same table and only the edge kinds — which PRD §9's section matrix reads — move.
+   *
+   * **100 rather than 99, and the difference is measured.** At 99 the count is 184, not
+   * 0: the 12 site-wide (target, anchor) pairs are on 13 of 13 pages, which is exactly
+   * 100% and still more than 99%. The site's pair-frequency distribution is bimodal with
+   * nothing between 2/13 and 13/13, so every N from 10 to 99 gives the identical answer
+   * — the observation step 4 recorded, still true.
+   */
+  it("records the N it used, and classifies identically at any N", async () => {
+    const lowId = await load(build403bplanCrawl());
+    const highId = await load(build403bplanCrawl());
+    const low = await analyse(db.pool, lowId, { boilerplateThresholdPct: 5 });
+    const high = await analyse(db.pool, highId, { boilerplateThresholdPct: 100 });
+
+    expect(low.boilerplateThresholdPct).toBe(5);
+    expect(high.boilerplateThresholdPct).toBe(100);
+    expect(await classes(lowId)).toEqual(EXPECTED_CLASSES);
+    expect(await classes(highId)).toEqual(EXPECTED_CLASSES);
+    // The edges did move, so the two runs really were different runs.
+    const boilerplate = async (crawlId: number) =>
+      (await listLinks(db.pool, crawlId)).filter((l) => l.isBoilerplate === true).length;
+    expect(await boilerplate(lowId)).toBe(240);
+    expect(await boilerplate(highId)).toBe(0);
   });
 });
 
@@ -224,13 +243,13 @@ describe("the planted noindex page", () => {
     });
     expect(metrics).toMatchObject({
       orphans: 3,
-      softOrphans: 3,
+      orphansUnknownReason: null,
       excluded: 1,
-      linked: 7,
+      linked: 10,
       // Excluded outranks "absent from the truth source": the search page is both.
       notInTruthSource: 0,
       // The three orphans, plus the search page, plus the page it rescued — which has
-      // an inbound contextual edge and still no path from the homepage.
+      // an inbound edge and still no path from the homepage.
       unreachable: 5,
     });
     expect((await depths(crawlId))["/plan-participant/online-access/"]).toBeNull();
@@ -268,12 +287,7 @@ describe("planted anomalies: one edge removed, one class flipped", () => {
       "orphan",
     );
     expect((await depths(crawlId))["/plan-participant/fund-prospectuses/"]).toBeNull();
-    expect(metrics).toMatchObject({
-      orphans: 5,
-      softOrphans: 3,
-      linked: 5,
-      unreachable: 5,
-    });
+    expect(metrics).toMatchObject({ orphans: 5, linked: 8, unreachable: 5 });
   });
 
   /**
@@ -300,7 +314,7 @@ describe("planted anomalies: one edge removed, one class flipped", () => {
     });
     const metrics = await analyse(db.pool, crawlId);
     expect((await classes(crawlId))["/newsletters/"]).toBe("orphan");
-    expect(metrics).toMatchObject({ orphans: 4, softOrphans: 3, linked: 6 });
+    expect(metrics).toMatchObject({ orphans: 4, linked: 9 });
   });
 
   /**
@@ -325,9 +339,14 @@ describe("planted anomalies: one edge removed, one class flipped", () => {
     expect(metrics.broken).toBe(0);
   });
 
-  it("turns a linked page into a soft orphan when its only contextual edge goes", async () => {
-    // /financial-advisor/ has 13 header nav edges (boilerplate) and one in-content
-    // "Learn More" from the homepage. Remove that one and the nav is all that is left.
+  /**
+   * The plant that used to produce a soft orphan, kept and inverted. `/financial-advisor/`
+   * has 13 header nav edges and one in-content "Learn More" from the homepage; removing
+   * that one leaves nothing but the nav. It stays `linked`, because it is: a visitor can
+   * click the header and arrive. The whole table is unchanged, which is the point — the
+   * removed edge was one of two ways to reach a page, not the only way.
+   */
+  it("keeps a page linked when only its boilerplate edges remain", async () => {
     const crawlId = await load(
       without(
         build403bplanCrawl(),
@@ -337,10 +356,10 @@ describe("planted anomalies: one edge removed, one class flipped", () => {
       ),
     );
     const metrics = await analyse(db.pool, crawlId);
-    expect((await classes(crawlId))["/financial-advisor/"]).toBe("soft_orphan");
+    expect(await classes(crawlId)).toEqual(EXPECTED_CLASSES);
     // Still one click from the homepage: the nav edge is an edge.
     expect((await depths(crawlId))["/financial-advisor/"]).toBe(1);
-    expect(metrics).toMatchObject({ orphans: 4, softOrphans: 4, linked: 5 });
+    expect(metrics).toMatchObject({ orphans: 4, linked: 9 });
   });
 });
 
@@ -571,7 +590,7 @@ describe("a site with no truth source", () => {
     const metrics = await analyse(db.pool, crawlId);
     expect(metrics).toMatchObject({
       orphans: null,
-      softOrphans: null,
+      orphansUnknownReason: "no_truth_source",
       // The noindex page is still excluded: that fact does not need an inventory.
       excluded: 1,
       undetectable: 12,
@@ -584,5 +603,70 @@ describe("a site with no truth source", () => {
       new Set(["undetectable", "excluded", "linked"]),
     );
     expect((await classes(crawlId))[short(SEARCH_URL)]).toBe("excluded");
+  });
+});
+
+/**
+ * PRD §15, settled 2026-08-20: a templated site is crawled to a ceiling, never whole.
+ * `agent.familyfirstlife.com` is 59,363 pages that are one page with a per-agent
+ * substitution, or 16.5 hours at the measured 1 req/s.
+ *
+ * The input here is the integrity.com capture — the exact one-page-of-1,953 crawl the
+ * coverage gate refuses two describes above. That is the comparison worth having: the
+ * same crawl, the same 0.05% coverage, and the only difference is whether the shortfall
+ * was policy. Sampled, it is not a failure, so it is not refused; and because it is
+ * still not an inventory-wide set difference, it does not produce a number either.
+ */
+describe("a sampled crawl (PRD §15)", () => {
+  const sampled = (json: FixtureCrawlJson): FixtureCrawlJson => ({
+    ...json,
+    site: {
+      ...json.site,
+      siteId: `${String(json.site["siteId"])}-sampled`,
+      crawlScope: "sample",
+      sampleCeiling: 500,
+    },
+  });
+
+  it("is not refused for coverage the way the identical full crawl is", async () => {
+    const capture = CAPTURE_SITES.find((s) => s.siteId === "integrity-com");
+    if (capture === undefined) throw new Error("no integrity-com capture");
+    const json = captureCrawlJson(capture) as FixtureCrawlJson;
+
+    await expect(analyse(db.pool, await load(json))).rejects.toThrow(
+      /in its truth source/,
+    );
+    const metrics = await analyse(db.pool, await load(sampled(json)));
+    expect(metrics.orphans).toBeNull();
+    expect(metrics.orphansUnknownReason).toBe("sampled");
+  });
+
+  /**
+   * The part §15 does not say and step 5.5 decided: `pages.class` has to agree with the
+   * suppressed count. A sampled crawl that wrote `orphan` onto pages while the row said
+   * "unknown" would put false positives in front of a reader — the page list is what
+   * anyone acts on. 403bplan.net is the case where the answer is knowable, so the
+   * difference is visible: crawled in full it has four true orphans, sampled it has
+   * none, and the four are not lost — they are `undetectable`.
+   */
+  it("cannot call any page an orphan, and says so per page as well as per crawl", async () => {
+    const crawlId = await load(sampled(build403bplanCrawl()));
+    const metrics = await analyse(db.pool, crawlId);
+
+    expect(metrics).toMatchObject({
+      orphans: null,
+      orphansUnknownReason: "sampled",
+      // The nine pages an inbound edge proves linked. Positive evidence survives
+      // sampling; the four pages whose case rests on absence do not.
+      linked: 9,
+      undetectable: 4,
+    });
+    const table = await classes(crawlId);
+    expect(table["/newsletters/"]).toBe("undetectable");
+    expect(table["/test-pay-button/"]).toBe("undetectable");
+    expect(Object.values(table).filter((c) => c === "orphan")).toHaveLength(0);
+    // Reachability is unaffected: depth is measured over the edges the crawl saw.
+    expect((await depths(crawlId))["/newsletters/"]).toBeNull();
+    expect((await depths(crawlId))["/contact-us/"]).toBe(1);
   });
 });

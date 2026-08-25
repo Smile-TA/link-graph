@@ -3,8 +3,8 @@ import { classifyPage, type PageFacts, type SiteRules } from "./classify.js";
 
 /**
  * A page that is in the truth source, serves 200, is indexable, and has one ordinary
- * contextual inbound edge. Every case below changes exactly one fact, so the fact
- * under test is the only thing that can move the answer.
+ * inbound edge. Every case below changes exactly one fact, so the fact under test is
+ * the only thing that can move the answer.
  */
 const page = (overrides: Partial<PageFacts> = {}): PageFacts => ({
   urlNormalized: "https://403bplan.net/newsletters/",
@@ -16,53 +16,58 @@ const page = (overrides: Partial<PageFacts> = {}): PageFacts => ({
   inTruthSource: true,
   isCrawlRoot: false,
   inboundTotal: 1,
-  inboundContextual: 1,
   ...overrides,
 });
 
-const sitemapSite: SiteRules = { truthSource: "sitemap", ignorePaths: [] };
+const sitemapSite: SiteRules = {
+  truthSource: "sitemap",
+  crawlScope: "full",
+  ignorePaths: [],
+};
+
+/** The same site crawled to a ceiling instead of exhaustively (PRD §15). */
+const sampledSite: SiteRules = { ...sitemapSite, crawlScope: "sample" };
 
 describe("classifyPage", () => {
-  it("is linked when a contextual inbound edge exists", () => {
+  it("is linked when an inbound edge exists", () => {
     expect(classifyPage(page(), sitemapSite)).toBe("linked");
   });
 
   it("is a true orphan with zero inbound edges", () => {
-    expect(
-      classifyPage(page({ inboundTotal: 0, inboundContextual: 0 }), sitemapSite),
-    ).toBe("orphan");
+    expect(classifyPage(page({ inboundTotal: 0 }), sitemapSite)).toBe("orphan");
   });
 
-  it("is a soft orphan when every inbound edge is boilerplate", () => {
-    expect(
-      classifyPage(page({ inboundTotal: 13, inboundContextual: 0 }), sitemapSite),
-    ).toBe("soft_orphan");
+  /**
+   * The soft-orphan class, dropped 2026-08-20 (PRD §2). A page with inbound edges is
+   * linked however those edges are styled: measured on 403bplan.net, `/contact-us/`
+   * has two genuine in-content links whose anchor happens to match the header nav
+   * entry, so both were marked boilerplate and the page classified `soft_orphan` —
+   * one of that site's three soft orphans was simply wrong. 13 boilerplate-only
+   * inbound edges is exactly that shape.
+   */
+  it("is linked when every inbound edge is boilerplate", () => {
+    expect(classifyPage(page({ inboundTotal: 13 }), sitemapSite)).toBe("linked");
   });
 
   /**
    * Measured on 403bplan.net: the homepage's only inbound edges are 13 header logo
    * links with an empty anchor, so the (target, anchor) pair is on 100% of pages and
-   * every inbound edge is boilerplate — which makes the homepage a soft orphan by the
-   * letter of PRD §2. It is the crawl root; a report that opens with "your homepage is
-   * a soft orphan" is the false positive PRD §13 says destroys trust.
+   * every inbound edge is boilerplate. That made the homepage a soft orphan under the
+   * dropped rule; the rule is gone, but the crawl root still cannot be an orphan when
+   * it has no inbound edges at all, and a report opening with "your homepage is an
+   * orphan" is the false positive PRD §13 says destroys trust.
    */
   it("never reports the crawl root as an orphan, however its inbound edges look", () => {
-    expect(
-      classifyPage(
-        page({ isCrawlRoot: true, inboundTotal: 13, inboundContextual: 0 }),
-        sitemapSite,
-      ),
-    ).toBe("linked");
-    expect(
-      classifyPage(
-        page({ isCrawlRoot: true, inboundTotal: 0, inboundContextual: 0 }),
-        sitemapSite,
-      ),
-    ).toBe("linked");
+    expect(classifyPage(page({ isCrawlRoot: true, inboundTotal: 13 }), sitemapSite)).toBe(
+      "linked",
+    );
+    expect(classifyPage(page({ isCrawlRoot: true, inboundTotal: 0 }), sitemapSite)).toBe(
+      "linked",
+    );
   });
 
   describe("excluded (PRD §2) outranks every orphan test", () => {
-    const orphaned = { inboundTotal: 0, inboundContextual: 0 } as const;
+    const orphaned = { inboundTotal: 0 } as const;
 
     it("excludes a noindex page", () => {
       expect(classifyPage(page({ ...orphaned, indexable: false }), sitemapSite)).toBe(
@@ -118,7 +123,7 @@ describe("classifyPage", () => {
     });
 
     it("excludes an ignore_paths match on the entry itself and on anything below it", () => {
-      const site: SiteRules = { truthSource: "sitemap", ignorePaths: ["/newsletters/"] };
+      const site: SiteRules = { ...sitemapSite, ignorePaths: ["/newsletters/"] };
       expect(classifyPage(page(orphaned), site)).toBe("excluded");
       expect(classifyPage(page({ ...orphaned, path: "/newsletters/2026/" }), site)).toBe(
         "excluded",
@@ -126,7 +131,7 @@ describe("classifyPage", () => {
     });
 
     it("does not let an ignore_paths entry match a sibling that merely shares a prefix", () => {
-      const site: SiteRules = { truthSource: "sitemap", ignorePaths: ["/newsletter"] };
+      const site: SiteRules = { ...sitemapSite, ignorePaths: ["/newsletter"] };
       expect(classifyPage(page(orphaned), site)).toBe("orphan");
     });
   });
@@ -140,13 +145,10 @@ describe("classifyPage", () => {
   describe("undetectable", () => {
     for (const truthSource of [null, "none"] as const) {
       it(`reports every page as undetectable when truth_source is ${String(truthSource)}`, () => {
-        const site: SiteRules = { truthSource, ignorePaths: [] };
-        expect(
-          classifyPage(
-            page({ inboundTotal: 0, inboundContextual: 0, inTruthSource: false }),
-            site,
-          ),
-        ).toBe("undetectable");
+        const site: SiteRules = { ...sitemapSite, truthSource };
+        expect(classifyPage(page({ inboundTotal: 0, inTruthSource: false }), site)).toBe(
+          "undetectable",
+        );
         expect(classifyPage(page(), site)).toBe("undetectable");
       });
     }
@@ -158,7 +160,7 @@ describe("classifyPage", () => {
     });
 
     it("still excludes a noindex page on a site with no truth source", () => {
-      const site: SiteRules = { truthSource: "none", ignorePaths: [] };
+      const site: SiteRules = { ...sitemapSite, truthSource: "none" };
       expect(classifyPage(page({ indexable: false }), site)).toBe("excluded");
     });
   });
@@ -174,10 +176,41 @@ describe("classifyPage", () => {
       "not_in_truth_source",
     );
     expect(
-      classifyPage(
-        page({ inTruthSource: false, inboundTotal: 0, inboundContextual: 0 }),
-        sitemapSite,
-      ),
+      classifyPage(page({ inTruthSource: false, inboundTotal: 0 }), sitemapSite),
     ).toBe("not_in_truth_source");
+  });
+  /**
+   * PRD §15, settled 2026-08-20: a templated site is sampled, never crawled whole —
+   * `agent.familyfirstlife.com` is 59,363 pages of one template. §2 (step 5.5) carries
+   * the per-page consequence: orphan detection is a set difference against the *whole*
+   * truth source, so on a sample the absence of an inbound edge is evidence of nothing.
+   * One inbound edge still proves `linked`, because positive evidence survives sampling
+   * and proving absence does not.
+   */
+  describe("a sampled crawl (PRD §15)", () => {
+    it("cannot call a truth-source page with no inbound edges an orphan", () => {
+      expect(classifyPage(page({ inboundTotal: 0 }), sampledSite)).toBe("undetectable");
+    });
+
+    it("still reports a page with an inbound edge as linked", () => {
+      expect(classifyPage(page(), sampledSite)).toBe("linked");
+      expect(classifyPage(page({ inboundTotal: 13 }), sampledSite)).toBe("linked");
+    });
+
+    it("still excludes by intent, which sampling does not affect", () => {
+      expect(classifyPage(page({ inboundTotal: 0, indexable: false }), sampledSite)).toBe(
+        "excluded",
+      );
+    });
+
+    it("still reports a page the inventory does not list as such", () => {
+      expect(
+        classifyPage(page({ inboundTotal: 0, inTruthSource: false }), sampledSite),
+      ).toBe("not_in_truth_source");
+    });
+
+    it("leaves a full crawl of the same site answering the orphan question", () => {
+      expect(classifyPage(page({ inboundTotal: 0 }), sitemapSite)).toBe("orphan");
+    });
   });
 });

@@ -352,6 +352,145 @@ gate tolerates up to 10% unfetched — that needs a step-4 decision.
 
 ---
 
+## Step 5.5 — spec alignment: drop `soft_orphan`, add sampled scope — S — **done**
+
+Not a feature. The two decisions recorded in `0236a6e` (PRD §2, §15) were written as
+spec "before any code changes", and the code still implements the old rules: `analyse`
+assigns `soft_orphan`, `crawl_metrics.soft_orphans` is a stored column, and there is no
+way to express a sampled crawl at all. Step 6 would otherwise be built against a schema
+its own spec already calls wrong.
+
+|            |                                                            |
+| ---------- | ---------------------------------------------------------- |
+| Packages   | `packages/db`, `packages/analyse`                          |
+| Depends on | steps 3, 4, 5                                              |
+| Seam       | unchanged — `analyse(pool, crawlId, opts)`, same call site |
+| Tests      | unit for both rules; `*.int.test.ts` for the migrations    |
+
+**Why it is its own step rather than the first half of step 6.** It changes step 4's
+committed behaviour, which the loop contract makes a hard stop for a subagent — the call
+is the user's and was already made. Bundling it into the crawler would also hide a
+schema change inside an L-sized step, and the migration is forward-only: once applied it
+cannot be edited.
+
+### 1. `soft_orphan` comes out
+
+`pages.class` loses the value and `crawl_metrics` loses the column. The migration is
+lossless rather than destructive: a page classified `soft_orphan` had inbound edges by
+definition, so under the new rule it is exactly `linked`, and the `UPDATE` says so.
+
+`classifyPage`'s final test becomes `inboundTotal > 0 → linked`, which makes
+`inboundContextual` dead — it comes out of `PageFacts` and out of
+`listPageAnalysisFacts`. `is_boilerplate` stays computed and stored for PRD §9's section
+matrix, and the "no link left unmarked" refusal in `analyse` stays, but its reason
+changes: an unmarked edge can no longer manufacture a class, so it is now an integrity
+check on the boilerplate pass rather than a guard on the taxonomy.
+
+`boilerplate_threshold_pct` stays on `crawl_metrics`. It is no longer the N that a
+class depends on — it is the N a stored `is_boilerplate` was computed at, and a row
+without it still cannot be compared with the next one.
+
+### 2. Sampling becomes its own axis
+
+PRD §15 says `crawler_mode = 'sample'`. `crawler_mode` is _which fetcher_
+(`http`/`playwright`) and sampling is _how much of the site_ — one column cannot carry
+both, and a third value would make "sample a Playwright site" unrepresentable. **Decided
+2026-08-24: a separate `crawl_scope`**, and §15 is amended to match.
+
+```sql
+crawler_mode    CHECK (crawler_mode IN ('http', 'playwright'))     -- unchanged
+crawl_scope     NOT NULL DEFAULT 'full' CHECK (crawl_scope IN ('full', 'sample'))
+sample_ceiling  integer CHECK (sample_ceiling > 0)
+CHECK ((crawl_scope = 'sample') = (sample_ceiling IS NOT NULL))
+```
+
+The paired CHECK is the point: `sample` with no ceiling is a full crawl wearing the
+label, and a ceiling on a `full` site is a limit nothing enforces. Neither can be
+written down.
+
+### 3. `orphans IS NULL` gains a reason
+
+Two different facts now produce a NULL orphan count — "this site has no truth source"
+(PRD §2, Undetectable) and "this crawl was a sample by policy" (§15) — and they have
+different remedies. A shared NULL that cannot say which is engineering guide §1's
+failure in miniature, so `crawl_metrics.orphans_unknown_reason` carries the vocabulary
+and a CHECK ties it to the column: `(orphans IS NULL) = (orphans_unknown_reason IS NOT
+NULL)`. There is no third state to forget. `soft_orphans`' old pairing CHECK is dropped
+with the column.
+
+### 4. Per-page, a sample cannot answer the orphan question either
+
+The decision as written is about `crawl_metrics`, but `analyse` also writes
+`pages.class`, and step 12's tables read it. On a sampled crawl a truth-source page with
+zero inbound edges is overwhelmingly likely to be linked from a page the sample never
+fetched — so classifying it `orphan` would put false positives in front of a reader
+while the crawl-level count honestly said "unknown". The taxonomy therefore ends:
+
+```
+inboundTotal > 0        → linked        (positive evidence, valid on a sample)
+sampled, no inbound     → undetectable  (absence of edges proves nothing here)
+otherwise               → orphan
+```
+
+`linked` is provable from one edge; `orphan` requires proving absence, which is exactly
+what a sample cannot do. The reason is not repeated per page — it is a property of the
+crawl and lives once, on `crawl_metrics`.
+
+### 5. The coverage gate recognises the scope
+
+Step 5's gate refuses a crawl covering less than 90% of its truth source, which a sample
+never will — it would refuse forever. For `crawl_scope = 'sample'` the gate does not run:
+the protection it provides is already provided, and more directly, by the orphan count
+being NULL with a stated reason. The shortfall is deliberate, so it is not a failure.
+
+**Done when** no `soft_orphan` survives anywhere in the tree, a sampled fixture crawl
+loads and analyses to `orphans: null` / `orphans_unknown_reason: 'sampled'` without the
+coverage gate firing, and the 403bplan.net fixture's four true orphans are unchanged —
+that last one is the regression test that the drop touched nothing it should not.
+
+**Done.** 230 unit + 79 integration tests, lint and Prettier clean. Migrations
+`007_drop_soft_orphan.sql` and `008_sample_scope.sql`. `soft_orphan` survives nowhere:
+not in the vocabulary, the CHECK, `crawl_metrics`, or the taxonomy.
+
+**The 403bplan.net table moved exactly where predicted and nowhere else.** The three soft
+orphans became `linked` (6 → 9) and **the four true orphans are untouched**, with the
+same NULL depths — the regression this step existed to protect.
+
+**The migration's lossless claim is tested, not asserted.** A fresh migration run has no
+`soft_orphan` row to reclassify, so the test builds the database in two halves: the real
+files up to `006` byte-for-byte into a temp directory, a `soft_orphan` page and a true
+`orphan` page written under the old vocabulary, then the real directory — which applies
+exactly `007` and `008` and nothing else. `/contact-us/` comes out `linked`,
+`/newsletters/` stays `orphan`, and writing the value back is refused.
+
+**Measured while writing the "N cannot move a class" test:** at N = 99, 184 of 240 edges
+are still boilerplate, not 0. The 12 site-wide `(target, anchor)` pairs sit on 13 of 13
+pages — exactly 100%, which is still _more than_ 99% — so the test's upper run uses 100.
+That is the same bimodal distribution step 4 recorded, seen from the other end.
+
+**The sampled path is proven on the crawl that exposed the hole it replaces.** The
+integrity.com capture — 1 page of a 1,953-URL inventory — is still refused as a full
+crawl and now analyses as a sampled one to `orphans: null` /
+`orphans_unknown_reason: 'sampled'`. Same bytes, different policy, and no zero either
+way. Sampled 403bplan.net gives 9 `linked` and 4 `undetectable`, never an `orphan`:
+`classifyPage` writes `orphan` only when `orphansUnknownReason` is null, so the page list
+and the count cannot disagree.
+
+**Reported, not fixed: `unreachable` is still a plain count on a sampled crawl.** PRD
+§15 keeps structure checked on the sample, so the number is computed — but a page can be
+depth-NULL there only because the crawl never fetched the page linking to it. It is a
+statement about the sampled graph, not the site, and now says so where it is defined.
+Whether it needs the same NULL-with-a-reason treatment as `orphans` is a step-12
+reporting decision.
+
+**Left undone, deliberately:** nothing enforces that a `sample_ceiling` is actually
+smaller than the inventory, so a "sampled" site with a ceiling above its page count
+suppresses an orphan count it could have produced. That is a crawler-policy check and it
+belongs with step 6, which is the thing that reads the ceiling. `orphansUnknownReason`
+has no reporting surface yet — step 7's CLI is its first reader.
+
+---
+
 ## Step 6 — `crawl`: the crawler — L
 
 |            |                                                                      |

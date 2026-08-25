@@ -11,7 +11,7 @@
  * green suite that could not reach a database is the failure mode the engineering
  * guide opens with.
  */
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -106,6 +106,86 @@ describe("runMigrations: the real migration set", () => {
       `SELECT site_id FROM sites`,
     );
     expect(sites.map((s) => s.site_id)).toEqual(["lionstreet-com"]);
+  });
+});
+
+/**
+ * `007_drop_soft_orphan.sql` calls itself lossless rather than destructive, and that
+ * claim is only exercised by a database that has a `soft_orphan` row in it — which a
+ * fresh migration run never does. So this one is built in two halves: the schema as it
+ * stood at 006, a row written under the old vocabulary, and then the migration.
+ *
+ * The reclassification is not a guess. A page classified `soft_orphan` had inbound
+ * edges by definition, and the rule that replaced it is "any inbound edge means
+ * linked", so `linked` is the answer the new rule gives that row — not the nearest
+ * available value.
+ */
+describe("007 reclassifies the rows it invalidates", () => {
+  let db: TempDatabase;
+  beforeAll(async () => {
+    db = await createTempDatabase("migrate_007");
+  });
+  afterAll(async () => {
+    await db.drop();
+  });
+
+  /** The real migration files up to and including `upTo`, byte for byte. */
+  async function migrationsUpTo(upTo: string): Promise<string> {
+    const files = filesOnDisk().filter((f) => f <= upTo);
+    const copies: Record<string, string> = {};
+    for (const name of files) {
+      copies[name] = await readFile(path.join(MIGRATIONS_DIR, name), "utf8");
+    }
+    return migrationsDir(copies);
+  }
+
+  it("turns a soft orphan into a linked page and refuses the value afterwards", async () => {
+    // Identical bytes, so the checksums recorded here are the ones the real directory
+    // carries — the second run applies 007 and 008 and re-applies nothing.
+    await runMigrations(db.pool, { dir: await migrationsUpTo("006_truth_source.sql") });
+    const { rows: sites } = await db.pool.query<{ id: number }>(
+      `INSERT INTO sites (site_id, canonical_host, aliases, truth_source)
+       VALUES ('403bplan-net', '403bplan.net', '{403bplan.net}', 'sitemap')
+       RETURNING id`,
+    );
+    const { rows: crawls } = await db.pool.query<{ id: number }>(
+      `INSERT INTO crawls (site_id, started_at, status)
+       VALUES ($1, '2026-08-20T09:07:45Z', 'complete') RETURNING id`,
+      [sites[0]!.id],
+    );
+    const crawlId = crawls[0]!.id;
+    // The real shape: /contact-us/ was the measured false positive of the dropped rule,
+    // and /newsletters/ is a true orphan, which must come through untouched.
+    await db.pool.query(
+      `INSERT INTO pages (crawl_id, url_normalized, path, in_truth_source, indexable,
+                          class)
+       VALUES ($1, 'https://403bplan.net/contact-us/', '/contact-us/', true, true,
+               'soft_orphan'),
+              ($1, 'https://403bplan.net/newsletters/', '/newsletters/', true, true,
+               'orphan')`,
+      [crawlId],
+    );
+
+    expect(await runMigrations(db.pool)).toEqual([
+      "007_drop_soft_orphan.sql",
+      "008_sample_scope.sql",
+    ]);
+
+    const { rows } = await db.pool.query<{ path: string; class: string }>(
+      `SELECT path, class FROM pages WHERE crawl_id = $1 ORDER BY path`,
+      [crawlId],
+    );
+    expect(rows).toEqual([
+      { path: "/contact-us/", class: "linked" },
+      { path: "/newsletters/", class: "orphan" },
+    ]);
+
+    // And the value is gone for good, so nothing can write one back.
+    await expect(
+      db.pool.query(`UPDATE pages SET class = 'soft_orphan' WHERE crawl_id = $1`, [
+        crawlId,
+      ]),
+    ).rejects.toThrow(/pages_class_known/);
   });
 });
 

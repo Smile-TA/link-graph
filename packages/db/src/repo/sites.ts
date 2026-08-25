@@ -35,9 +35,24 @@ export function isInventory(truthSource: TruthSource | null): boolean {
   return truthSource === "rest" || truthSource === "sitemap";
 }
 
-/** Playwright is opt-in per site (PRD §5). */
+/** Playwright is opt-in per site (PRD §5). Which fetcher, not how much to crawl. */
 export const CRAWLER_MODES = ["http", "playwright"] as const;
 export type CrawlerMode = (typeof CRAWLER_MODES)[number];
+
+/**
+ * How much of the site a crawl covers (PRD §15, `008_sample_scope.sql`).
+ *
+ * `sample` exists for templated sites: `agent.familyfirstlife.com` is 59,363 pages that
+ * are one page with a per-agent substitution, and crawling it whole costs 16.5 hours at
+ * the measured 1 req/s for nothing. It is a separate axis from `crawlerMode` because
+ * that one is which fetcher, and a site can need both a real browser and a ceiling.
+ *
+ * **A sampled crawl cannot answer the orphan question**, since that is a set difference
+ * against the *whole* truth source — `analyse` reports `orphans: null` with the reason
+ * `sampled` rather than a zero (PRD §2, §15).
+ */
+export const CRAWL_SCOPES = ["full", "sample"] as const;
+export type CrawlScope = (typeof CRAWL_SCOPES)[number];
 
 export interface SiteInput {
   readonly siteId: string;
@@ -47,6 +62,13 @@ export interface SiteInput {
   readonly enabled: boolean;
   readonly truthSource: TruthSource | null;
   readonly crawlerMode: CrawlerMode;
+  readonly crawlScope: CrawlScope;
+  /**
+   * The page ceiling for a sampled crawl. Non-null exactly when `crawlScope` is
+   * `sample`, which a CHECK enforces: `sample` with no ceiling is a full crawl wearing
+   * the label, and a ceiling on a `full` site is a limit nothing enforces.
+   */
+  readonly sampleCeiling: number | null;
   /** Requests per second. */
   readonly rateLimit: number;
   readonly ignorePaths: readonly string[];
@@ -58,7 +80,8 @@ export interface SiteRow extends SiteInput {
 
 const COLUMNS = `id, site_id AS "siteId", canonical_host AS "canonicalHost", aliases,
   stage_host AS "stageHost", enabled, truth_source AS "truthSource",
-  crawler_mode AS "crawlerMode", rate_limit AS "rateLimit",
+  crawler_mode AS "crawlerMode", crawl_scope AS "crawlScope",
+  sample_ceiling AS "sampleCeiling", rate_limit AS "rateLimit",
   ignore_paths AS "ignorePaths"`;
 
 /**
@@ -69,12 +92,14 @@ const COLUMNS = `id, site_id AS "siteId", canonical_host AS "canonicalHost", ali
 export async function upsertSite(db: Queryable, site: SiteInput): Promise<SiteRow> {
   const { rows } = await db.query<SiteRow>(
     `INSERT INTO sites (site_id, canonical_host, aliases, stage_host, enabled,
-                        truth_source, crawler_mode, rate_limit, ignore_paths)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                        truth_source, crawler_mode, crawl_scope, sample_ceiling,
+                        rate_limit, ignore_paths)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (site_id) DO UPDATE SET
        canonical_host = excluded.canonical_host, aliases = excluded.aliases,
        stage_host = excluded.stage_host, enabled = excluded.enabled,
        truth_source = excluded.truth_source, crawler_mode = excluded.crawler_mode,
+       crawl_scope = excluded.crawl_scope, sample_ceiling = excluded.sample_ceiling,
        rate_limit = excluded.rate_limit, ignore_paths = excluded.ignore_paths
      RETURNING ${COLUMNS}`,
     [
@@ -85,6 +110,8 @@ export async function upsertSite(db: Queryable, site: SiteInput): Promise<SiteRo
       site.enabled,
       site.truthSource,
       site.crawlerMode,
+      site.crawlScope,
+      site.sampleCeiling,
       site.rateLimit,
       site.ignorePaths,
     ],

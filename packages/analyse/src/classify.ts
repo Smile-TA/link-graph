@@ -13,7 +13,12 @@
  * `TRUTH_SOURCES` and `CRAWL_STATUSES`.
  */
 import { isInventory } from "@link-graph/db";
-import type { PageClass, TruthSource } from "@link-graph/db";
+import type {
+  CrawlScope,
+  OrphansUnknownReason,
+  PageClass,
+  TruthSource,
+} from "@link-graph/db";
 
 export type { PageClass };
 
@@ -42,8 +47,6 @@ export interface PageFacts {
   readonly isCrawlRoot: boolean;
   /** Inbound internal edges from other pages of this crawl. Self-links excluded. */
   readonly inboundTotal: number;
-  /** Of those, the ones that are not boilerplate. */
-  readonly inboundContextual: number;
 }
 
 export interface SiteRules {
@@ -53,6 +56,8 @@ export interface SiteRules {
    * (PRD §2, Undetectable).
    */
   readonly truthSource: TruthSource | null;
+  /** `sample` = crawled to a ceiling by policy, so the site was never covered whole. */
+  readonly crawlScope: CrawlScope;
   readonly ignorePaths: readonly string[];
 }
 
@@ -64,6 +69,22 @@ export function hasTruthSource(site: SiteRules): boolean {
   // The rule itself lives beside the column's vocabulary in `@link-graph/db`, because
   // the fixture parser needs the same test — see `isInventory`.
   return isInventory(site.truthSource);
+}
+
+/**
+ * Why this site's orphan count is unknown, or `null` when it can be counted. One
+ * function with two callers — `classifyPage` below and the `crawl_metrics` row in
+ * `analyse.ts` — because they must agree about it: a crawl reporting `orphans: null`
+ * while its page list reads `orphan` is two answers to one question, and a reader acts
+ * on the page list.
+ *
+ * Order matters: with no truth source there is no inventory to difference against at
+ * all, which is the more fundamental gap and the one whose remedy comes first.
+ */
+export function orphansUnknownReason(site: SiteRules): OrphansUnknownReason | null {
+  if (!hasTruthSource(site)) return "no_truth_source";
+  if (site.crawlScope === "sample") return "sampled";
+  return null;
 }
 
 /**
@@ -117,15 +138,27 @@ function isExcluded(page: PageFacts, site: SiteRules): boolean {
  *    orphan question is unanswerable and must not be answered with a zero (PRD §2).
  * 4. **Not in the truth source** — the question does not apply: the page exists and the
  *    inventory does not list it. Distinct from Excluded, which is about intent.
- * 5. Then the set difference itself: contextual inbound → linked, boilerplate-only
- *    inbound → soft orphan, nothing at all → true orphan.
+ * 5. Then the set difference itself: **any** inbound edge → linked, nothing at all →
+ *    orphan. The soft-orphan class between them was dropped on 2026-08-20 (PRD §2):
+ *    it produced a measured false positive on 403bplan.net's `/contact-us/`, and its
+ *    verdict moved with the crawler's URL-admission policy.
+ * 6. Except on a sampled crawl, where "nothing at all" is not a finding. The set
+ *    difference is against the *whole* truth source, and a sample never saw it, so an
+ *    unlinked-looking page is overwhelmingly likely to be linked from a page the crawl
+ *    skipped. One inbound edge still proves `linked` — positive evidence survives
+ *    sampling, proving absence does not.
  */
 export function classifyPage(page: PageFacts, site: SiteRules): PageClass {
   if (isExcluded(page, site)) return "excluded";
   if (page.isCrawlRoot) return "linked";
-  if (!hasTruthSource(site)) return "undetectable";
+  const unknown = orphansUnknownReason(site);
+  // With no inventory at all there is nothing to say about this page — not even whether
+  // the inventory was supposed to list it, which is why this outranks the next test.
+  if (unknown === "no_truth_source") return "undetectable";
   if (!page.inTruthSource) return "not_in_truth_source";
-  if (page.inboundContextual > 0) return "linked";
-  if (page.inboundTotal > 0) return "soft_orphan";
-  return "orphan";
+  if (page.inboundTotal > 0) return "linked";
+  // The last line is the invariant, not a special case: `orphan` is written onto a page
+  // only when this crawl can produce an orphan count, so the page list and the count
+  // cannot disagree.
+  return unknown === null ? "orphan" : "undetectable";
 }

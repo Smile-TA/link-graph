@@ -51,6 +51,7 @@ import {
   upsertSite,
   isInventory,
   CRAWLER_MODES,
+  CRAWL_SCOPES,
   TRUTH_SOURCES,
   type SiteInput,
   type TruthSource,
@@ -178,6 +179,23 @@ function parseSite(raw: Record<string, unknown>): SiteInput {
   if (!aliases.includes(canonicalHost)) {
     fail("site", `aliases must include canonicalHost ${canonicalHost}`);
   }
+  // PRD §15. The pairing mirrors the CHECK in `008_sample_scope.sql`, refused here so a
+  // wrong fixture names the fixture rather than failing at INSERT: `sample` with no
+  // ceiling is a full crawl wearing the label, and a ceiling on a `full` site is a
+  // limit nothing enforces.
+  const crawlScope = f.optOneOf("crawlScope", CRAWL_SCOPES, "full");
+  const sampleCeiling = f.optInt("sampleCeiling");
+  if (crawlScope === "sample" && (sampleCeiling === null || sampleCeiling <= 0)) {
+    fail(
+      "site",
+      `crawlScope 'sample' needs a sampleCeiling above zero, got ` +
+        `${String(sampleCeiling)}`,
+    );
+  }
+  if (crawlScope === "full" && sampleCeiling !== null) {
+    fail("site", `sampleCeiling ${sampleCeiling} is set on a site crawled in full`);
+  }
+
   const site: SiteInput = {
     siteId: f.str("siteId"),
     canonicalHost,
@@ -189,6 +207,8 @@ function parseSite(raw: Record<string, unknown>): SiteInput {
     // second while meaning the first (PRD §2, Undetectable).
     truthSource: f.oneOf("truthSource", TRUTH_SOURCES),
     crawlerMode: f.optOneOf("crawlerMode", CRAWLER_MODES, "http"),
+    crawlScope,
+    sampleCeiling,
     rateLimit: f.optNumber("rateLimit") ?? 1,
     ignorePaths: f.optStrArray("ignorePaths") ?? [],
   };

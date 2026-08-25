@@ -181,8 +181,6 @@ export async function computePageDepths(
 export interface PageAnalysisFact extends PageRow {
   /** Inbound internal edges from other pages of this crawl. Self-links excluded. */
   readonly inboundTotal: number;
-  /** Of those, the ones that are not boilerplate. */
-  readonly inboundContextual: number;
 }
 
 /**
@@ -195,9 +193,11 @@ export interface PageAnalysisFact extends PageRow {
  * hidden by a bookkeeping choice. This differs from the boilerplate frequency count
  * above, deliberately: that measures appearances, this measures reachability.
  *
- * `is_boilerplate` must already be set: `count(*) FILTER (WHERE NOT is_boilerplate)`
- * skips NULLs, so an unmarked crawl would report every edge as boilerplate and every
- * linked page as a soft orphan.
+ * **The contextual count is deliberately absent.** It was here to split
+ * boilerplate-only inbound edges from the rest, which is the soft-orphan rule dropped
+ * on 2026-08-20 (`007_drop_soft_orphan.sql`). The taxonomy now asks only whether any
+ * inbound edge exists, and a count nothing reads is a number that goes wrong quietly.
+ * `links.is_boilerplate` is still computed and stored for PRD §9's section matrix.
  */
 export async function listPageAnalysisFacts(
   db: Queryable,
@@ -205,13 +205,10 @@ export async function listPageAnalysisFacts(
 ): Promise<PageAnalysisFact[]> {
   const { rows } = await db.query<PageAnalysisFact>(
     `SELECT ${PAGE_COLUMNS},
-            coalesce(i.total, 0)::int AS "inboundTotal",
-            coalesce(i.contextual, 0)::int AS "inboundContextual"
+            coalesce(i.total, 0)::int AS "inboundTotal"
      FROM pages p
      LEFT JOIN (
-       SELECT to_page_id,
-              count(*) AS total,
-              count(*) FILTER (WHERE NOT is_boilerplate) AS contextual
+       SELECT to_page_id, count(*) AS total
        FROM links
        WHERE crawl_id = $1 AND NOT is_external AND to_page_id IS NOT NULL
          AND to_page_id <> from_page_id
