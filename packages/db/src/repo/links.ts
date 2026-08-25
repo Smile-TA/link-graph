@@ -79,3 +79,28 @@ export async function listLinks(db: Queryable, crawlId: number): Promise<LinkRow
   );
   return rows;
 }
+
+/**
+ * Point every internal edge at the page row its target names, where this crawl has one.
+ *
+ * Run once at the end of a crawl rather than at insert time: a page is linked to long
+ * before it is fetched — step 3 measured 439 of 452 internal edges pointing at targets
+ * that were not yet rows — so resolving on insert would leave most of the graph
+ * permanently unjoined and every one of those pages looking like an orphan.
+ *
+ * Idempotent, so a resumed crawl can run it again. Returns the number of edges it
+ * joined.
+ */
+export async function resolveLinkTargets(
+  db: Queryable,
+  crawlId: number,
+): Promise<number> {
+  const { rowCount } = await db.query(
+    `UPDATE links l SET to_page_id = p.id
+     FROM pages p
+     WHERE l.crawl_id = $1 AND l.to_page_id IS NULL AND NOT l.is_external
+       AND p.crawl_id = l.crawl_id AND p.url_normalized = l.to_url_normalized`,
+    [crawlId],
+  );
+  return rowCount ?? 0;
+}

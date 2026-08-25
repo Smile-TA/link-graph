@@ -293,6 +293,16 @@ Scrapy is the strongest alternative and solves both natively
 (`CONCURRENT_REQUESTS_PER_DOMAIN`, `DOWNLOAD_DELAY`, `JOBDIR` resume) at the cost of a
 second language; revisit if the thin crawler proves painful.
 
+**Measured 2026-08-24 (step 6): undici's process-global dispatcher costs ~200ms per
+request when the request is issued from inside a `bottleneck` task.** Order-independent,
+against a local server: 10 sequential requests take **2.0s** through the global
+dispatcher and **75ms** through an `Agent` the fetcher owns. Both reuse a single TCP
+connection, and outside a bottleneck task both are fast — it is the combination, not
+either half. The table above names undici "for pooling, keep-alive"; that pool now has
+to be **held explicitly by the fetcher**, because the obvious `undici.request` form
+silently loses it here. Cost of not knowing: roughly eight minutes of wall clock on a
+33-hour crawl, invisible.
+
 **Rendered HTML is the only link source.** `content.rendered` is empty on every page
 sampled from both integrity.com and tidewatermg.com — content lives in page-builder
 metadata (Bricks, GenerateBlocks). Parsing `post_content` would require a parser per
@@ -331,6 +341,17 @@ Requirements:
   keeps a full estate sweep near an hour.
 - Record observed thresholds per site over time; tune from data rather than config
   archaeology.
+
+**Open, surfaced by step 6: two rate limiters now point at one estate.**
+`packages/truth/src/http.ts` says in as many words that "the per-host limiter that will
+replace this arrives with the crawler's `bottleneck` in step 6". It was not replaced,
+because doing so edits step 5's committed I/O seam. The two differ in a way that matters:
+truth's pacer is **global** — one 1 req/s gap across all hosts, so resolving 165 sites is
+serialised — while the crawler's is **per host** and reads `sites.rate_limit`. A truth
+resolution running beside a crawl of the same host paces independently, which is two
+streams into one Wordfence and the one thing §5.1 exists to prevent. Nothing schedules
+the two together yet; step 10 is where that becomes reachable, and is the place to
+converge them.
 
 CloudFront fronts every site, so cached pages cost the origin little — but a crawl
 of distinct URLs is nearly all cache misses and does reach Wordfence.

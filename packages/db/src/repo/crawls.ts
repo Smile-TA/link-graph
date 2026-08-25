@@ -1,5 +1,5 @@
 /** `crawls` — one crawl of one site (PRD §7). */
-import type { Queryable } from "../pool.js";
+import { expectOneRow, type Queryable } from "../pool.js";
 
 /**
  * A crawl that ended early is `partial`, never `complete` (guide §1). Declared as a
@@ -87,4 +87,98 @@ export async function findCrawl(db: Queryable, id: number): Promise<CrawlRow | n
     [id],
   );
   return rows[0] ?? null;
+}
+
+export interface CrawlOutcome {
+  /**
+   * `complete` or `partial`, never back to `running`. A crawl that ended early is
+   * `partial` and `analyse` refuses it outright (engineering guide §1) — which is why
+   * this is a required field with no default rather than something a caller can omit.
+   */
+  readonly status: Exclude<CrawlStatus, "running">;
+  readonly finishedAt: Date;
+  /** Page rows written. The crawl's own count of what it saw. */
+  readonly pagesSeen: number;
+  /** True if any host block was hit during the run (PRD §5.1). */
+  readonly wasThrottled: boolean;
+}
+
+/**
+ * Close a crawl. Only a `running` crawl can be closed, so a second worker finishing the
+ * same crawl raises rather than overwriting the first one's verdict — the case where a
+ * `partial` would quietly become `complete`.
+ */
+export async function finishCrawl(
+  db: Queryable,
+  crawlId: number,
+  outcome: CrawlOutcome,
+): Promise<void> {
+  const { rowCount } = await db.query(
+    `UPDATE crawls
+     SET status = $2, finished_at = $3, pages_seen = $4, was_throttled = $5
+     WHERE id = $1 AND status = 'running'`,
+    [
+      crawlId,
+      outcome.status,
+      outcome.finishedAt,
+      outcome.pagesSeen,
+      outcome.wasThrottled,
+    ],
+  );
+  expectOneRow(
+    rowCount,
+    `finishCrawl: crawl ${crawlId} is not running, so it cannot be finished as ` +
+      `${outcome.status}`,
+  );
+}
+
+/**
+ * Put a crawl back into `running` so a worker can carry on with it.
+ *
+ * A `complete` crawl is refused: its page set has already been reported as the whole
+ * site, and adding rows to it afterwards would change a number someone has read.
+ */
+export async function reopenCrawl(db: Queryable, crawlId: number): Promise<void> {
+  // The status is read in the same statement so the refusal can name it: "complete or
+  // missing" leaves an operator resuming a crawl with the one fact they came for still
+  // unknown (engineering guide §6, errors carry context).
+  const { rows } = await db.query<{ status: CrawlStatus }>(
+    `WITH found AS (SELECT id, status FROM crawls WHERE id = $1),
+          reopened AS (
+            UPDATE crawls SET status = 'running', finished_at = NULL
+            WHERE id = $1 AND status <> 'complete'
+            RETURNING status)
+     SELECT status FROM found`,
+    [crawlId],
+  );
+  const status = rows[0]?.status;
+  if (status === undefined) throw new Error(`reopenCrawl: no crawl ${crawlId}`);
+  if (status === "complete") {
+    throw new Error(
+      `reopenCrawl: crawl ${crawlId} is complete, so it cannot be resumed. Its page ` +
+        `set has already been reported as the whole site; crawl the site again instead.`,
+    );
+  }
+}
+
+export interface CrawlRowCounts {
+  readonly pages: number;
+  readonly links: number;
+}
+
+/** What a crawl actually wrote — the `{ pages, links }` of PRD §5.0's seam. */
+export async function countCrawlRows(
+  db: Queryable,
+  crawlId: number,
+): Promise<CrawlRowCounts> {
+  const { rows } = await db.query<CrawlRowCounts>(
+    `SELECT (SELECT count(*) FROM pages WHERE crawl_id = $1)::int AS pages,
+            (SELECT count(*) FROM links WHERE crawl_id = $1)::int AS links`,
+    [crawlId],
+  );
+  const counts = rows[0];
+  if (counts === undefined) {
+    throw new Error(`countCrawlRows returned no row for crawl ${crawlId}`);
+  }
+  return counts;
 }

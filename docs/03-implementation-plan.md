@@ -491,7 +491,7 @@ has no reporting surface yet — step 7's CLI is its first reader.
 
 ---
 
-## Step 6 — `crawl`: the crawler — L
+## Step 6 — `crawl`: the crawler — L — **done**
 
 |            |                                                                      |
 | ---------- | -------------------------------------------------------------------- |
@@ -518,6 +518,71 @@ links point at aliases. Deterministic, offline, and it can assert the backoff.
 
 **Done when** the fixture server crawl is byte-identical across runs and the
 kill-and-resume test completes with the same page set.
+
+**Done.** 291 unit + 102 integration tests (230/79 before), lint and Prettier clean.
+`crawl(pool, site, seeds, deps?)` and `resumeCrawl(pool, crawlId, deps?)` over
+`packages/crawl` and migration `009_frontier.sql`. Pure rules in `record.ts`, `target.ts`,
+`throttle.ts`, `seeds.ts`, `sample.ts` and `verdict.ts`; I/O in `fetcher.ts`,
+`limiter.ts`, `write-page.ts`; `crawl.ts` is the loop and the refusals.
+
+**A partial crawl is thrown, not returned.** `PartialCrawlError` carries the result, so a
+caller that ignores the outcome gets an unhandled rejection and a non-zero exit with no
+CLI in the picture, and `crawls.status = 'partial'` makes `analyse` refuse it. A returned
+`{ status: 'partial' }` is a value someone can forget to read, which is the pw-template
+bug in a new costume.
+
+**Both done-criteria are met on the real 13 pages.** The fixture server serves the
+checked-in 403bplan.net captures and the crawl produces **13 pages and 240 links — the
+figures step 4 derived by hand from the same bytes**, byte-identical across runs (a full
+row-by-row snapshot, identity columns excluded, so a new column joins the comparison
+rather than escaping it). Kill-and-resume: killed after 6 requests, the row stays
+`running` with 7 pending, the resume makes 7 more requests for 13 distinct total, and its
+snapshot equals an uninterrupted run's.
+
+**The 503 path is exercised end to end and does not sleep.** First 503 stops the host,
+`retry_after: 3600` is surfaced, the run is `partial` in under 5s of wall clock, the
+blocked URL keeps **no page row** — a 503 describes our request rate, not the page, and
+storing it would file a live page as broken — and the resume completes the crawl with
+`was_throttled` still true. Throttling that happened stays recorded even when a later run
+finishes.
+
+**Measured, and it refines PRD §5.0: undici's process-global dispatcher costs ~200ms per
+request when the request is issued inside a `bottleneck` task.** 10 sequential requests:
+2.0s global, 75ms through an owned `Agent`, same single TCP connection, order-independent
+— and outside a bottleneck task both are fast. The combination is the bug. Eight minutes
+of a 33-hour crawl, invisible. §5.0 now says the pool must be held explicitly.
+
+**Two rules that could not be fixtured, and both are reported rather than faked.** A
+two-node canonical loop does not exist on this estate (step 2 found only self-referential
+Yoast canonicals in six probes), and the crawler never reads a canonical as a traversal
+input, so the loop is unreachable by construction — the test proves that against the real
+canonicalized duplicate instead of inventing markup. And `headerNoindex` initially
+disagreed with `extractPage` about `noindex`: core splits directives on whitespace _and_
+commas because Google reads `content="noindex nofollow"`, the header parser split on
+commas only, so the same directive in a header would have left the page orphan-eligible.
+Found by comparing the two, fixed, tested.
+
+**The `sample_ceiling` check step 5.5 left open is done here**, where the ceiling is
+actually read: a `sample` site whose ceiling is not smaller than its inventory is refused,
+because it would cover the whole site and still report `orphans: null` for the reason
+`sampled` — suppressing a count it could have produced. Not compared when the site has no
+inventory: there is no number, and refusing on that basis would be an invented rule.
+
+**Left undone, deliberately:** robots.txt — PRD §5.0 lists `robots-parser`, this step's
+contract does not, this is our own estate, and honouring a `Disallow` would _manufacture_
+orphans by hiding pages from the graph; `retry-after` has no persistence sink (step 10's
+scheduler is what would sleep on it); `pages.post_type` stays null; internal document
+links are recorded as edges and never fetched, landing in `internal_unresolved` where
+step 8's lychee will check them; no `FOR UPDATE SKIP LOCKED` on the frontier (one worker
+per crawl until step 10); a sampled crawl still queues URLs it will never fetch, on
+purpose — the frontier is the only record of what the sample skipped.
+
+**Three duplications now at the threshold where the guide says lift them**, all left in
+place with the duplication named in comments, because each edits a committed earlier step:
+`homepageUrl` (second copy, the first in `packages/analyse`), the file-extension primitive
+shared with `core/url.ts`, and the `SiteRow → SiteHosts` projection now written five
+times. The 403bplan fixture manifest is a third copy of the 13-row URL→file table — the
+97 KB bodies are read in place, not copied.
 
 ---
 

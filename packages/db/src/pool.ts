@@ -22,6 +22,20 @@ export interface Queryable {
   ): Promise<QueryResult<R>>;
 }
 
+/**
+ * A mutation that must have matched exactly one row, or the caller's assumption about
+ * the row's state was wrong.
+ *
+ * Written once because the four single-row mutations that use it — closing, reopening
+ * and ticking a crawl or a frontier entry — all mean the same thing by a mismatch:
+ * something else changed the row first. `context` says which row and what was expected,
+ * since "matched 0 rows" alone tells an operator nothing.
+ */
+export function expectOneRow(rowCount: number | null, context: string): void {
+  if (rowCount === 1) return;
+  throw new Error(`${context} (matched ${String(rowCount)} rows)`);
+}
+
 export function createPool(connectionString: string): Pool {
   return new Pool({ connectionString });
 }

@@ -1,5 +1,5 @@
 export { databaseUrl } from "./config.js";
-export { createPool, withTransaction } from "./pool.js";
+export { createPool, expectOneRow, withTransaction } from "./pool.js";
 // Test scaffolding, exported because engineering guide §4.3 requires every service to
 // have a test entry point that runs without any other service: packages/analyse needs a
 // throwaway database, and a deep import into this package's src/ would be a seam nobody
@@ -41,8 +41,31 @@ export type {
 } from "./repo/sites.js";
 export { insertRegistryHealth, listRegistryHealth } from "./repo/registry-health.js";
 export type { RegistryHealthInput } from "./repo/registry-health.js";
-export { insertCrawl, findCrawl, CRAWL_ENVS, CRAWL_STATUSES } from "./repo/crawls.js";
-export type { CrawlEnv, CrawlInput, CrawlRow, CrawlStatus } from "./repo/crawls.js";
+export {
+  insertCrawl,
+  findCrawl,
+  finishCrawl,
+  reopenCrawl,
+  countCrawlRows,
+  CRAWL_ENVS,
+  CRAWL_STATUSES,
+} from "./repo/crawls.js";
+export type {
+  CrawlEnv,
+  CrawlInput,
+  CrawlOutcome,
+  CrawlRow,
+  CrawlRowCounts,
+  CrawlStatus,
+} from "./repo/crawls.js";
+export {
+  addToFrontier,
+  countFrontier,
+  markFrontierFetched,
+  nextFrontierUrl,
+  recordFrontierFailure,
+} from "./repo/frontier.js";
+export type { FrontierCounts, FrontierEntry, FrontierRow } from "./repo/frontier.js";
 export {
   insertPages,
   listPages,
@@ -51,7 +74,7 @@ export {
   PAGE_COLUMNS,
 } from "./repo/pages.js";
 export type { PageClass, PageInput, PageRow } from "./repo/pages.js";
-export { insertLinks, listLinks } from "./repo/links.js";
+export { insertLinks, listLinks, resolveLinkTargets } from "./repo/links.js";
 export type { LinkInput, LinkRow } from "./repo/links.js";
 export { upsertExternalUrl, findExternalUrl } from "./repo/external-urls.js";
 export type { ExternalUrlInput } from "./repo/external-urls.js";

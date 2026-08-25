@@ -19,9 +19,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { MIGRATIONS_DIR, runMigrations } from "./migrate.js";
 import { createTempDatabase, type TempDatabase } from "./testing/temp-database.js";
 
-/** The tables PRD §7 names, plus the runner's own bookkeeping. */
+/**
+ * The tables PRD §7 names, plus the runner's own bookkeeping and `crawl_frontier` —
+ * which PRD §7 does not name and PRD §5.0 does: "Frontier + state | Postgres table"
+ * (step 6, `009`).
+ */
 const EXPECTED_TABLES = [
   "crawl_diffs",
+  "crawl_frontier",
   "crawl_metrics",
   "crawls",
   "external_urls",
@@ -169,6 +174,7 @@ describe("007 reclassifies the rows it invalidates", () => {
     expect(await runMigrations(db.pool)).toEqual([
       "007_drop_soft_orphan.sql",
       "008_sample_scope.sql",
+      "009_frontier.sql",
     ]);
 
     const { rows } = await db.pool.query<{ path: string; class: string }>(
