@@ -586,7 +586,7 @@ times. The 403bplan fixture manifest is a third copy of the 13-row URL→file ta
 
 ---
 
-## Step 7 — CLI: PRD phase 1 complete — S
+## Step 7 — CLI: PRD phase 1 complete — S — **built, verification pending**
 
 `link-graph crawl <site-id>` → truth source → crawl → analyse → print the orphan
 table. One command, one site, no queue, no UI.
@@ -597,6 +597,48 @@ every reported orphan. PRD §13 requires measuring the false-positive rate here,
 before anything is built on top. If FP rate is not near zero, stop and fix step 4.
 
 **Done when** a real orphan list for a real site survives manual review.
+
+**Half done, and deliberately stopped there.** 334 unit + 113 integration tests
+(291/102 before), lint and Prettier clean. `packages/cli` gives
+`link-graph crawl <site-id>`: registry row → `resolveTruthSource` → `crawl` → `analyse`
+→ the orphan table, with `runCrawlCommand(pool, siteId, progress, deps)` and
+`main(argv, io, deps) → exit code` as its seams.
+
+**The command reproduces step 4's hand-derived table through an independent path** — 13
+pages, 240 links, 9 linked, 4 orphans, the same four URLs, 17 internal unresolved, 23
+external — reached by resolving truth over HTTP and crawling, not by loading a fixture
+JSON. Its own happy-path test guessed the fourth orphan wrong and the command was right.
+
+**The exit code is the contract, because it is the only part a cron job reads.** 0 the
+question was answered; 1 usage/registry, nothing crawled; 2 the run failed and printed
+no numbers; 3 the crawl finished and the orphan count is unknown. **3 covers `sampled`
+too** — deliberate or not, it is not an answer, and a caller reading only the code must
+not record it as one.
+
+**What is NOT done is the half that matters: the live run and the false-positive
+measurement.** PRD §13 makes it the gate before anything is built on top, and the loop
+contract makes a live crawl a hard stop for a subagent. The step stays open until a real
+orphan list for a real site survives manual review — which is a decision about which site
+to crawl and whose time reviews it.
+
+**Blocked on that same decision, and pre-scoped:** `--boilerplate-threshold` and
+`--min-coverage` flags. Both `analyse` options name step 7 as their calibration point and
+neither can be calibrated without the live crawl, so the flags are ten lines at
+`run.ts:86` the moment the run is green-lit.
+
+**A §1-shaped gap found and left pinned rather than patched — see PRD §15.** A truth
+resolution that loses one of its two sources still exits 0 and differences against the
+smaller view. It is printed as a finding under a heading naming the consequence, and an
+integration test pins today's behaviour so that changing it is a decision rather than an
+accident.
+
+**Left undone:** no `resume` subcommand, so every retry after a `PartialCrawlError`
+re-fetches the site — the most valuable next addition, and it needs `resumeCrawl` reachable
+from the CLI. Nothing creates a `sites` row: the command refuses an unknown site with a
+`UsageError` naming step 9, and real use needs either step 9 or a one-off insert.
+`pool.on("error")` covers idle clients only — a connection lost inside a transaction still
+exits 1, and closing that needs a listener in `withTransaction` (step 3's committed code),
+deferred to step 10.
 
 ---
 

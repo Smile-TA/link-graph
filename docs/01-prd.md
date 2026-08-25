@@ -599,6 +599,19 @@ by ramped probing of whyaim.com until Wordfence returned 503.
   by policy" are different facts with different remedies and a bare NULL cannot say
   which.
 
+- **A degraded truth resolution still exits 0, and differences against the smaller view.
+  Surfaced 2026-08-25 by step 7; needs a decision.** Measured shape: WP REST answers 403,
+  the sitemap answers, `decide()` returns `sitemap` before reaching its unresolved-findings
+  check, and the inventory becomes the sitemap's view. Coverage then passes at 100% —
+  against _that_ — and the run exits 0 under a code documented as "the table printed is the
+  whole site". On 403bplan.net both sources list the same 13 URLs so nothing moves. On
+  integrity.com it would difference against 96 URLs instead of 124 and never mention the
+  other 28, so up to 28 real orphans could go unreported by a run that called itself clean.
+  The question is which findings are severe enough to flip a verdict — the reporting
+  decision §4 deferred along with `findings` itself, and the same decision the findings
+  table (step 12/13) has to answer. Step 7 printed the degradation as a finding, left the
+  exit code alone, and pinned the behaviour in a test so changing it is deliberate.
+
 - Are the ~23 sitemap-less, REST-less hosts that look like real sites in scope?
   (The other ~24 are planenroll funnels, rate calculators and APIs — presumed out.)
 - Boilerplate threshold N — start at 60%, tune against real data.

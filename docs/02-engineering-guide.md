@@ -188,7 +188,19 @@ npm run format            prettier --write .
 npm test                  unit tier — needs nothing
 npm run test:integration  needs `docker compose up -d --wait` and, for one file, the
                           live estate (see §4.3)
+
+npx link-graph crawl <site-id>            the product (step 7). Equivalently
+npm run link-graph -- crawl <site-id>     needs Postgres migrated, a `sites` row for
+                                          <site-id>, and network egress to that host
 ```
+
+**Both forms of that last one are verified, and a bare `link-graph` is not.** The
+workspace binary is a TypeScript file with a `#!/usr/bin/env tsx` shebang, so it runs
+only where `tsx` resolves on PATH — which `npx` and `npm run` both arrange and a plain
+shell does not. Measured 2026-08-24: `npx link-graph --help` exits 0;
+`npx link-graph crawl nope` against an unmigrated database exits 2 with
+`relation "sites" does not exist`; `DATABASE_URL=localhost:5432/x` exits 1. Recorded
+here rather than only in the CLI's own help for the reason the paragraph below exists.
 
 `pretest` runs `lint`, matching pw-template: a type or lint error fails before a
 single test executes.

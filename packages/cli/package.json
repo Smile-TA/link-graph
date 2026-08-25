@@ -1,0 +1,19 @@
+{
+  "name": "@link-graph/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "link-graph": "src/bin.ts"
+  },
+  "dependencies": {
+    "@link-graph/analyse": "*",
+    "@link-graph/crawl": "*",
+    "@link-graph/db": "*",
+    "@link-graph/truth": "*",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5"
+  }
+}
