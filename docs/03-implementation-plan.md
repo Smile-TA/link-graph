@@ -586,7 +586,7 @@ times. The 403bplan fixture manifest is a third copy of the 13-row URL→file ta
 
 ---
 
-## Step 7 — CLI: PRD phase 1 complete — S — **built, verification pending**
+## Step 7 — CLI: PRD phase 1 complete — S — **built; verification FAILED, see below**
 
 `link-graph crawl <site-id>` → truth source → crawl → analyse → print the orphan
 table. One command, one site, no queue, no UI.
@@ -631,6 +631,67 @@ resolution that loses one of its two sources still exits 0 and differences again
 smaller view. It is printed as a finding under a heading naming the consequence, and an
 integration test pins today's behaviour so that changing it is a decision rather than an
 accident.
+
+### The live verification, 2026-08-25: **the gate fails, and not where the plan expected**
+
+Ran `link-graph crawl integrity-com` against prod. **41.2 minutes, 2,454 pages, 127,845
+links, `was_throttled = false`** — 2,454 requests at 1 req/s drew no 503, which is the
+first real confirmation of PRD §5.1's default outside the 155-request probe. Truth source
+`rest`, 2,001 URLs (REST 1,974, sitemap 1,959) in 43 requests. Exit 0.
+
+**It reported 538 orphans — 27% of the inventory — and about 89% of them are false
+positives.** PRD §13's threshold is "near zero", so this is a failure of the gate, and by
+the plan's own rule nothing gets built on top until it is fixed.
+
+**Two buckets are 480 of the 538, and both are the same root cause: links that do not
+exist in server-rendered HTML.**
+
+- **`/partner/…` — 270 orphans.** `/about-us/our-partners/` serves 70 KB containing
+  **one** `/partner/` href and **zero** partner slugs anywhere, including inside JS
+  payloads; `admin-ajax` appears 4 times. The whole 274-page partner directory is
+  AJAX-loaded. Only 4 distinct `/partner/` URLs are linked from anywhere on the site.
+- **`/inspire/…` — 210 orphans.** The crawler _did_ discover the archive's pagination
+  (23 pages fetched, up to `?sf_paged=24`). But `/inspire/?sf_paged=16` serves 90 KB whose
+  only 12 `inspire` links are **pagination links** — not one item. Search & Filter Pro
+  (`searchandfilter`, `data-sf`, `admin-ajax`) renders the results client-side.
+
+**PRD §5's opening claim needs qualifying.** "These are server-rendered WordPress sites,
+so links are in the HTML" is true of article bodies and false of this estate's
+directories and filtered archives. `crawler_mode = 'playwright'` was designed for exactly
+this and has never been exercised; `CrawlFetcher` is already the seam, so it is a second
+implementation of an existing interface rather than a redesign.
+
+**Of the remaining 58, most are still not actionable findings:**
+
+- **~10 taxonomy archives** (`/category/featured/`, `/insights_category/*`,
+  `/wealth_category/*`, `/family_category/featured/`). PRD §2 already requires taxonomy
+  archives to be Excluded and calls it phase-1 work; step 4 flagged it unbuilt. This is
+  the second site to prove it, after tidewatermg.com's 164.
+- **~10 form thank-you pages** (`/agents/thank-you/`, `/wealth/*/thank-you/`, …), unlinked
+  by design and reached only after a submit.
+- **~8 campaign landing pages** (`/nationaldogday/`, `/springtraining/`,
+  `/valero-open-giveaway/`, …), reached from email and social rather than internal links.
+- **~30 that look genuinely actionable**, including `/test/` and
+  `/integrityconnect-ip-old/` — exactly the leftovers this tool exists to surface.
+
+**The plan's attribution is wrong, and that is the most useful thing here.** This step
+said "if FP rate is not near zero, stop and fix step 4". Step 4 is **correct**: every one
+of those 538 pages genuinely has zero inbound internal edges in the crawl, and the maths
+faithfully reports what the graph contains. The defects are **acquisition** (links that
+need JS to exist) and **classification** (PRD §2's Excluded classes still unbuilt). A
+"fix step 4" instruction would have sent the next iteration at the one component that is
+behaving.
+
+**The run delivered real value regardless, which is worth recording:** 58 broken internal
+links with blast radius, led by `/integrityidol/` (404, linked from **18** pages), plus a
+malformed relative link resolving to
+`/inspire/…/teammembers/katiry-gonzalez/` — the RFC 3986 class step 2 found on
+tidewatermg.com, on a second site. The Excluded machinery works: 250 canonical-elsewhere,
+90 redirect, 28 noindex, 18 status-404.
+
+**Blocked on a decision (PRD §15):** whether to add the Playwright fetcher and build
+§2's Excluded classes before re-measuring, and whether thank-you and campaign pages are
+Excluded-by-intent or genuine findings a reader wants.
 
 **Left undone:** no `resume` subcommand, so every retry after a `PartialCrawlError`
 re-fetches the site — the most valuable next addition, and it needs `resumeCrawl` reachable

@@ -303,6 +303,17 @@ to be **held explicitly by the fetcher**, because the obvious `undici.request` f
 silently loses it here. Cost of not knowing: roughly eight minutes of wall clock on a
 33-hour crawl, invisible.
 
+**Measured 2026-08-25, and it qualifies this section's opening claim.** "These are
+server-rendered WordPress sites, so links are in the HTML" holds for article bodies and
+**fails for directories and filtered archives.** On integrity.com,
+`/about-us/our-partners/` serves 70 KB carrying one `/partner/` href and zero partner
+slugs even inside JS payloads (`admin-ajax` × 4), while the site has 274 partner pages;
+`/inspire/?sf_paged=16` serves 90 KB whose only 12 `inspire` links are pagination links,
+because Search & Filter Pro renders results client-side. An HTTP-only crawl reported
+**480 false orphans** from these two patterns alone. `crawler_mode = 'playwright'` exists
+for this and has never been exercised — and `CrawlFetcher` is already the seam, so it is a
+second implementation of an existing interface, not a redesign.
+
 **Rendered HTML is the only link source.** `content.rendered` is empty on every page
 sampled from both integrity.com and tidewatermg.com — content lives in page-builder
 metadata (Bricks, GenerateBlocks). Parsing `post_content` would require a parser per
@@ -641,6 +652,22 @@ nofollow'>`** — verified on `/` and `/about-us/`, no `X-Robots-Tag`. Under §2
   inbound internal link" when nothing was assessed (it was saying that for a site where
   the question was asked of no page at all), and the two dead staging hosts are the
   configured-but-not-serving class that step 9's coverage-drift report exists to find.
+
+- **Step 7's false-positive gate failed on 2026-08-25 and the remedy needs deciding.**
+  A full prod crawl of integrity.com (41.2 min, 2,454 pages, 127,845 links, no 503)
+  reported **538 orphans, ~89% false**. Causes, in order of size: AJAX-rendered listings
+  (480 — see §5), then §2's still-unbuilt Excluded classes for taxonomy archives (~10),
+  then two classes §2 has no rule for at all — **form thank-you pages** (~10, unlinked by
+  design, reached after a submit) and **campaign landing pages** (~8, reached from email
+  and social). Roughly 30 look genuinely actionable, including `/test/` and
+  `/integrityconnect-ip-old/`.
+
+  Three decisions: whether to build the Playwright fetcher now; whether taxonomy-archive
+  exclusion (already a §2 phase-1 requirement, still unbuilt on its second confirmed
+  site) comes with it; and whether thank-you and campaign pages are Excluded-by-intent or
+  findings a reader wants to see. **Step 4 is not implicated** — every reported page truly
+  has zero inbound edges in the crawl — so the plan's "stop and fix step 4" instruction
+  is itself the thing to correct.
 
 - Are the ~23 sitemap-less, REST-less hosts that look like real sites in scope?
   (The other ~24 are planenroll funnels, rate calculators and APIs — presumed out.)
