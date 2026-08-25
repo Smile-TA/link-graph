@@ -271,6 +271,37 @@ describe("formatReport when a source was lost", () => {
   });
 });
 
+/**
+ * Measured 2026-08-25 against `integrity-2024.staging02.imgwebhost.com`: every page of
+ * that site carries `<meta name='robots' content='noindex, nofollow'>` — verified on the
+ * homepage and `/about-us/`. Under PRD §2 every page is then Excluded, including the
+ * crawl root, since Excluded outranks the crawl-root rule. So `orphans` is 0 with
+ * `linked` also 0, and the old wording said "every URL in this site's truth source has
+ * at least one inbound internal link" — which is false: no URL was assessed at all. A
+ * zero that reads as good news, which is the one thing this report may not do.
+ */
+describe("formatReport when no page of the inventory was assessed", () => {
+  const allExcluded = report({
+    metrics: metrics({ orphans: 0, linked: 0, excluded: 13, undetectable: 0 }),
+    orphans: [],
+  });
+
+  it("does not claim every URL is linked when none was even asked about", () => {
+    const out = formatReport(allExcluded);
+    expect(out).not.toMatch(/at least one inbound internal link/);
+    expect(out).toMatch(/Orphans\s+none found, and none could be/);
+    expect(out).toContain("13");
+  });
+
+  it("still says none-and-clean when pages really were assessed", () => {
+    const assessed = report({
+      metrics: metrics({ orphans: 0, linked: 9, excluded: 4 }),
+      orphans: [],
+    });
+    expect(formatReport(assessed)).toMatch(/at least one inbound internal link/);
+  });
+});
+
 describe("reportProblem", () => {
   it("passes a report whose table and count agree", () => {
     expect(reportProblem(report())).toBeNull();

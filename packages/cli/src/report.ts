@@ -319,6 +319,22 @@ function orphanSummary(report: CrawlReport): string {
         `the findings below`,
     );
   }
+  // Zero orphans has two causes and they are not the same news. Measured 2026-08-25 on
+  // integrity-2024.staging02.imgwebhost.com, where every page carries
+  // `<meta name=robots content='noindex, nofollow'>`: every page is then Excluded — the
+  // crawl root included, since Excluded outranks the crawl-root rule — so `linked` is 0
+  // and the orphan question was never asked of a single URL. Saying "every URL has an
+  // inbound link" there is false, and false in the direction that reads as good news.
+  if (orphans === 0 && report.metrics.linked === 0) {
+    return prosaicRow(
+      "Orphans",
+      `none found, and none could be: no page of the truth source was assessed. ` +
+        `${report.metrics.excluded} page(s) are excluded by intent — noindex, a ` +
+        `canonical pointing elsewhere, a redirect or an ignore_paths match (PRD §2) — ` +
+        `so the orphan question was asked of nothing. A site-wide noindex, as staging ` +
+        `environments carry, produces exactly this`,
+    );
+  }
   if (orphans === 0) {
     return row(
       "Orphans",

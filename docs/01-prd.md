@@ -623,6 +623,25 @@ by ramped probing of whyaim.com until Wordfence returned 503.
   would trade a false clean bill of health for a false empty one. What changes is that the
   summary line and the exit code both say the count is of a short inventory.
 
+- **Staging cannot measure the orphan false-positive rate, measured 2026-08-25.** Probed
+  the three `integrity.com` apps in the registry: `integrity.staging02` and
+  `integrity-2025.staging02` both answer **404 "404 page not found"** (19 bytes,
+  `text/plain` — an ingress 404, not WordPress), so only `integrity-2024.staging02` serves.
+  That one is a real mirror: 100 KB homepage, Yoast, 17 child sitemaps matching prod's
+  post types, and 35 distinct self-host links with none pointing at `integrity.com`, so
+  node identity is clean. **But every page carries `<meta name='robots' content='noindex,
+nofollow'>`** — verified on `/` and `/about-us/`, no `X-Robots-Tag`. Under §2 every page
+  is then Excluded, the crawl root included, so a staging crawl yields `orphans: 0` with
+  `linked: 0` and exit 0. Staging is therefore usable for broken links and structure and
+  **useless for orphans**, unless §2's `indexable` rule is made environment-dependent —
+  which would mean a staging crawl deliberately ignoring the one signal that most often
+  marks a page as excluded by intent. Not decided.
+
+  Two consequences already taken: the report no longer says "every URL has at least one
+  inbound internal link" when nothing was assessed (it was saying that for a site where
+  the question was asked of no page at all), and the two dead staging hosts are the
+  configured-but-not-serving class that step 9's coverage-drift report exists to find.
+
 - Are the ~23 sitemap-less, REST-less hosts that look like real sites in scope?
   (The other ~24 are planenroll funnels, rate calculators and APIs — presumed out.)
 - Boilerplate threshold N — start at 60%, tune against real data.
