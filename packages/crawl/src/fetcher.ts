@@ -33,6 +33,13 @@ export interface CrawlFetcher {
 }
 
 /**
+ * Exported because `createPlaywrightFetcher` presents the same identity: the two
+ * fetchers crawl one estate, and a WAF rule written against one of them has to apply
+ * to the other.
+ */
+export const USER_AGENT = "link-graph/0.1 (+link audit)";
+
+/**
  * The request headers, measured rather than assumed.
  *
  * Verified 2026-08-24 with one GET of `https://403bplan.net/terms-of-service/`: this
@@ -53,7 +60,7 @@ export interface CrawlFetcher {
  * this is loud rather than silent.
  */
 const HEADERS: Readonly<Record<string, string>> = {
-  "user-agent": "link-graph/0.1 (+link audit)",
+  "user-agent": USER_AGENT,
   accept: "text/html,application/xhtml+xml,*/*",
   "accept-encoding": "identity",
 };

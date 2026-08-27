@@ -17,6 +17,17 @@
  * server per host. What that gives up is TLS and DNS, which is what the one live test in
  * `packages/truth` covers; what it keeps is a real socket, real status lines, real
  * headers and real redirects.
+ *
+ * **This trick does not extend to a browser, and the failure is silent and expensive.**
+ * `createPlaywrightFetcher` is handed a local URL like any other fetcher, but Chromium
+ * resolves the hosts *inside* the page itself: a capture whose scripts are
+ * `https://403bplan.net/wp-content/…` — which every capture in this repo is — makes the
+ * browser fetch them from the real host, at a rate no limiter sees. Measured 2026-08-26
+ * while timing the browser fetcher against `403bplan-net/home.html`: ~7 same-host script
+ * requests per page load went to the live site before it was noticed. A fixture for the
+ * browser therefore keeps every subresource root-relative (`partner-directory.ts`), and
+ * a capture must not be served to it until this server can map a host to a local
+ * origin for Chromium too.
  */
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -25,7 +36,12 @@ import { createHttpFetcher, type CrawlFetcher, type FetchResult } from "../fetch
 export interface FixtureResponse {
   readonly status: number;
   readonly headers?: Readonly<Record<string, string>>;
-  readonly body?: string;
+  /**
+   * A `Buffer` when the bytes matter rather than the text: a body served with
+   * `content-encoding: gzip` is the case the browser fetcher has to decode, and
+   * `response.end(string)` would write it as UTF-8 and corrupt every byte above 0x7F.
+   */
+  readonly body?: string | Buffer;
 }
 
 /** What a host answers for a path (`/about/?x=1`, exactly as requested). */

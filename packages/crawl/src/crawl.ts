@@ -35,11 +35,13 @@ import {
   recordFrontierFailure,
   reopenCrawl,
   resolveLinkTargets,
+  type CrawlerMode,
   type SiteRow,
 } from "@link-graph/db";
 import type { Pool } from "pg";
 import { fetchPage, type FetchOutcome } from "./fetch-page.js";
-import { createHttpFetcher, type CrawlFetcher } from "./fetcher.js";
+import { FETCHERS } from "./fetcher-for-mode.js";
+import { type CrawlFetcher } from "./fetcher.js";
 import { createHostLimiter, type HostLimiter } from "./limiter.js";
 import { recordPage } from "./record.js";
 import { atSampleCeiling } from "./sample.js";
@@ -106,7 +108,7 @@ export async function crawl(
   // started would be indistinguishable from one a worker was killed during.
   if (problem !== null) throw new Error(`crawl: ${problem}`);
 
-  const { crawler, release } = resolveDeps(deps);
+  const { crawler, release } = resolveDeps(site.crawlerMode, deps);
   let crawlId: number;
   try {
     crawlId = await openCrawl(pool, site, seeds, crawler);
@@ -178,7 +180,7 @@ export async function resumeCrawl(
   }
   // Refuses a completed crawl: its page set has already been reported as the whole site.
   await reopenCrawl(pool, crawlId);
-  const { crawler, release } = resolveDeps(deps);
+  const { crawler, release } = resolveDeps(site.crawlerMode, deps);
   // `was_throttled` is sticky across resumes: a crawl that was blocked was blocked, even
   // if a later run finished it.
   return run(pool, crawlId, site, crawlRow.wasThrottled, crawler, release);
@@ -192,14 +194,21 @@ export async function resumeCrawl(
  * belongs to a caller that may be crawling 15 other hosts through it (PRD §5.1's
  * "parallelise across hosts freely").
  */
-function resolveDeps(deps: Partial<CrawlDeps>): {
+function resolveDeps(
+  mode: CrawlerMode,
+  deps: Partial<CrawlDeps>,
+): {
   crawler: CrawlDeps;
   release: () => Promise<void>;
 } {
   const fetcher = deps.fetcher;
   const limiter = deps.limiter;
   const crawler: CrawlDeps = {
-    fetcher: fetcher ?? createHttpFetcher(),
+    // Which fetcher is the site's, not the caller's: `crawler_mode` is a registry
+    // column (PRD §5), and a `playwright` site crawled over plain HTTP is the 480
+    // false orphans step 7 measured. An injected fetcher still wins — that is the
+    // seam the fixture server and every unit test use.
+    fetcher: fetcher ?? FETCHERS[mode](),
     limiter: limiter ?? createHostLimiter(),
     now: deps.now ?? (() => new Date()),
   };

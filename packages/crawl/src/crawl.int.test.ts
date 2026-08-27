@@ -593,6 +593,55 @@ describe("crawl", () => {
     });
   });
 
+  /**
+   * **The one line that decides whether step 7's 480 false orphans come back, and the
+   * only test that runs it.** Every other case here injects a fetcher — it has to, since
+   * the fixture server cannot answer at the site's canonical host — so `FETCHERS[mode]()`
+   * in `resolveDeps` is otherwise never executed, and `crawl()` passing a hardcoded
+   * `"http"` instead of `site.crawlerMode` would leave this suite green.
+   *
+   * The host is `.invalid`, which RFC 2606 reserves and no resolver ever answers, so this
+   * reaches no network. What it asserts is *which* client failed to resolve it.
+   *
+   * **Both report `ENOTFOUND`, and that is itself worth knowing**: the browser fetcher
+   * takes the main document through `route.fetch()`, which is Playwright's Node-side
+   * request context, so the document's DNS happens where undici's does and not in
+   * Chromium's network stack. The fingerprint is what rides along — Playwright appends a
+   * `Call log:` with the browser's own request headers, `sec-ch-ua: "HeadlessChrome"`
+   * among them, which the undici path has no way to produce.
+   */
+  describe("crawler_mode chooses the fetcher, with nothing injected", () => {
+    const unresolvable = "crawl-mode-probe.invalid";
+    const runWithMode = async (crawlerMode: "http" | "playwright") => {
+      const site = await makeSite({
+        crawlerMode,
+        canonicalHost: unresolvable,
+        aliases: [unresolvable],
+      });
+      const home = `https://${unresolvable}/`;
+      // No `fetcher` in deps: the limiter and clock only, so the crawler builds its own.
+      const error = await crawl(db.pool, site, seedsOf([home]), { limiter, now }).then(
+        () => null,
+        (thrown: unknown) => thrown,
+      );
+      expect(error).toBeInstanceOf(PartialCrawlError);
+      return (error as PartialCrawlError).result.stoppedBecause ?? "";
+    };
+
+    it("uses Chromium for a playwright site", async () => {
+      const reason = await runWithMode("playwright");
+      expect(reason).toMatch(/HeadlessChrome/);
+      expect(reason).toMatch(/Call log:/);
+    });
+
+    it("uses undici for an http site", async () => {
+      const reason = await runWithMode("http");
+      expect(reason).toMatch(/ENOTFOUND|EAI_AGAIN/);
+      expect(reason).not.toMatch(/HeadlessChrome/);
+      expect(reason).not.toMatch(/Call log:/);
+    });
+  });
+
   it("refuses to resume a crawl that already completed", async () => {
     const server = await serve({ [HOST]: serve403bplan });
     const site = await makeSite();

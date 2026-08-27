@@ -314,6 +314,26 @@ because Search & Filter Pro renders results client-side. An HTTP-only crawl repo
 for this and has never been exercised — and `CrawlFetcher` is already the seam, so it is a
 second implementation of an existing interface, not a redesign.
 
+**The Playwright fetcher exists as of 2026-08-26**, selected by `crawler_mode` through an
+exhaustive map rather than a branch. It takes the main document through Playwright's
+Node-side request context (so `maxRedirects: 0` still holds and redirects stay this
+layer's decision), blocks images, media, fonts and stylesheets, and waits for
+`networkidle` — measured on the partner fixture: `load` finds 0 of 4 injected links,
+`networkidle` finds 4. A page that never goes quiet is a `transport-error`, never a
+half-built DOM, because zero links from a rendered page is the orphan-manufacturing bug
+this fetcher exists to remove.
+
+**Unresolved, and it blocks the first live playwright crawl: subresource requests are not
+paced.** The document goes through the limiter; the scripts and XHR the page then issues
+go through Chromium, which no `bottleneck` queue sees. Wordfence's measured threshold is
+~8 req/s per host and its ban is an hour, so a page carrying more than a handful of
+same-host subresources could exceed it at 1 _page_ per second. The phenomenon is already
+measured, accidentally: serving a saved capture to the browser sent **~7 same-host script
+requests per page load to the live site**, because captures reference absolute
+`https://403bplan.net/wp-content/…` URLs and the browser resolves them itself. The count
+per real page is **not yet measured** — doing so needs one live page load — and until it
+is, no site should be crawled in `playwright` mode.
+
 **Rendered HTML is the only link source.** `content.rendered` is empty on every page
 sampled from both integrity.com and tidewatermg.com — content lives in page-builder
 metadata (Bricks, GenerateBlocks). Parsing `post_content` would require a parser per
