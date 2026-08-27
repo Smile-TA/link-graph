@@ -17,12 +17,32 @@
  */
 import { normalizeUrl, type SiteHosts } from "@link-graph/core";
 
+/**
+ * One URL as a source listed it, before normalization: the permalink and the CMS object
+ * the source named for it. Named once because three places would otherwise write it out
+ * — both enumerations and `gather` — and the next field added to it would be three edits
+ * with nothing linking them.
+ */
+export interface SourceUrl {
+  readonly url: string;
+  readonly postType: string | null;
+}
+
 /** One URL as a single source found it, after normalization. */
 export interface FoundUrl {
   /** Absolute, normalized: the identity `pages.url_normalized` will hold. */
   readonly url: string;
   readonly path: string;
-  /** The WordPress post type, when the source knew it. A sitemap never does. */
+  /**
+   * The CMS object the source named: a post type slug from WP REST, or the object a
+   * child sitemap is named after — which may be a taxonomy slug or `author`, since a
+   * taxonomy archive has no post type. `null` when the source named nothing, which is
+   * what a flat `sitemap.xml` gives.
+   *
+   * **The sitemap does name one**, contrary to what this said until 2026-08-26: the
+   * child's own filename is the name, and discarding it left PRD §4's Excluded class
+   * with nothing to read (`sitemapChild` in `sitemap.ts`).
+   */
   readonly postType: string | null;
 }
 
@@ -60,10 +80,7 @@ export interface Gathered {
  * pages would otherwise put them in this site's inventory, where every one of them is
  * an orphan nothing links to. The count comes back so the caller can report it.
  */
-export function gather(
-  entries: readonly { url: string; postType: string | null }[],
-  site: SiteHosts,
-): Gathered {
+export function gather(entries: readonly SourceUrl[], site: SiteHosts): Gathered {
   const urls: FoundUrl[] = [];
   const foreign: string[] = [];
   const unusable: string[] = [];
@@ -108,9 +125,12 @@ export function mergeInventories(
   for (const found of sitemap ?? []) {
     const existing = merged.get(found.url);
     merged.set(found.url, {
-      // The post type comes from REST when REST knew it: the sitemap carries none, and
-      // overwriting a known post type with null would lose the only fact that lets a
-      // later step classify page-builder artifacts (PRD §4).
+      // REST wins when both named one. It was a no-op until the sitemap started
+      // carrying a name too, and it is now a live choice: REST enumerates post types
+      // and never a taxonomy archive, so its answer is the authoritative one — and the
+      // URLs where the two could disagree are the ones a name-based rule would get
+      // wrong. Overwriting a known post type with the sitemap's would also lose it
+      // entirely on a flat sitemap, which names nothing (PRD §4).
       ...(existing ?? found),
       inRest: existing?.inRest ?? false,
       inSitemap: true,

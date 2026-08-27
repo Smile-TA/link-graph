@@ -48,6 +48,9 @@ export async function writePage(
       record.discovered.map((discovered) => ({
         urlNormalized: discovered,
         inTruthSource: false,
+        // Nothing named a post type for a URL the crawl found by following a link; the
+        // truth source is the only thing that ever does, and null stays "unknown".
+        postType: null,
       })),
     );
     await markFrontierFetched(tx, crawlId, url, at);

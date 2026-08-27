@@ -32,6 +32,12 @@ export interface RecordInput {
   /** Node identity, as the frontier holds it. */
   readonly url: NormalizedUrl;
   readonly inTruthSource: boolean;
+  /**
+   * The CMS object the frontier carried for this URL — a post type slug, a taxonomy
+   * slug or `author` (step 5's provenance). `null` for a discovered URL, and for one
+   * from a source that named nothing.
+   */
+  readonly postType: string | null;
   readonly site: SiteHosts;
   readonly status: number;
   /** Response headers, names lowercased and repeats already joined. */
@@ -95,9 +101,11 @@ export function recordPage(input: RecordInput): PageRecord {
     page: {
       urlNormalized: url.href,
       path: url.path,
-      // Step 5 knows the post type of every inventory URL, but nothing reads the column
-      // yet and threading it through the seam would be a field with no reader.
-      postType: null,
+      // The truth source's provenance, carried on the frontier because the seed list is
+      // gone by the time the page is fetched. PRD §2's Excluded class reads it: without
+      // it every taxonomy archive is a phantom orphan (~10% of tidewatermg.com's
+      // sitemap, and 9 of integrity.com's 538 reported orphans).
+      postType: input.postType,
       statusCode: status,
       // analyse computes depth and class; a value here would make an un-analysed crawl
       // look analysed (002_crawls.sql).

@@ -196,6 +196,7 @@ describe("createPlaywrightFetcher", () => {
       recordPage({
         url,
         inTruthSource: true,
+        postType: null,
         site: SITE,
         status: result.status,
         headers: result.headers,

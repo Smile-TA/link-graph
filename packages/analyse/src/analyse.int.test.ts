@@ -257,6 +257,60 @@ describe("the planted noindex page", () => {
 });
 
 /**
+ * PRD §4's non-content classes, end to end: `crawls.taxonomies` and `pages.post_type`
+ * both read out of Postgres by a run of `analyse`, not by a unit test holding them in
+ * its hand.
+ *
+ * **Planted, and the shape is integrity.com's.** 403bplan.net has no taxonomy archive
+ * to record — 11 post types, no custom taxonomy, one `page-sitemap.xml` child — so the
+ * plant gives one of its four true orphans the provenance integrity.com's
+ * `/category/featured/` has: post type `category`, in a site that declares `category` a
+ * taxonomy. That is exactly the row three of the nine orphans of the 2026-08-25 run
+ * carry, and the assertion is the one that matters: the orphan count goes down by one
+ * and the excluded count goes up by one, from a column and nothing else.
+ */
+describe("a planted taxonomy archive (PRD §2, §4)", () => {
+  const asTaxonomyArchive = (json: FixtureCrawlJson, url: string) => {
+    const pages = json.pages.map((page) =>
+      page.url === url ? { ...page, postType: "category" } : page,
+    );
+    expect(pages).not.toEqual(json.pages);
+    return {
+      ...json,
+      crawl: { ...json.crawl, taxonomies: ["category", "post_tag"] },
+      pages,
+    };
+  };
+
+  const NEWSLETTERS = "https://403bplan.net/newsletters/";
+
+  it("is excluded rather than an orphan, and the orphan count falls by one", async () => {
+    const crawlId = await load(asTaxonomyArchive(build403bplanCrawl(), NEWSLETTERS));
+    const metrics = await analyse(db.pool, crawlId);
+    expect(await classes(crawlId)).toEqual({
+      ...EXPECTED_CLASSES,
+      "/newsletters/": "excluded",
+    });
+    // 4 orphans and 0 excluded without the plant, asserted at the top of this file.
+    expect(metrics).toMatchObject({ orphans: 3, excluded: 1 });
+  });
+
+  /**
+   * The safe direction, and the whole reason the vocabulary is stored per crawl: the
+   * identical page, with the identical post type, in a site that never declared
+   * `category` a taxonomy. It stays an orphan. A rule that excluded on the name alone
+   * would delete a real finding here and nobody would see it go.
+   */
+  it("stays an orphan when the crawl declared no such taxonomy", async () => {
+    const json = asTaxonomyArchive(build403bplanCrawl(), NEWSLETTERS);
+    const crawlId = await load({ ...json, crawl: { ...json.crawl, taxonomies: [] } });
+    const metrics = await analyse(db.pool, crawlId);
+    expect((await classes(crawlId))["/newsletters/"]).toBe("orphan");
+    expect(metrics).toMatchObject({ orphans: 4, excluded: 0 });
+  });
+});
+
+/**
  * Two plants that are single documented edits to the real crawl: one edge removed, one
  * page's class predicted to flip. This is what proves the set difference rather than
  * the fixture — an implementation that returned the same table whatever the edges said

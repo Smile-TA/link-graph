@@ -7,6 +7,7 @@ const result = (over: Partial<TruthSourceResult> = {}): TruthSourceResult => ({
   urls: [],
   postTypes: [],
   counts: { total: null, rest: null, sitemap: null },
+  taxonomies: [],
   findings: [],
   requests: 0,
   ...over,
@@ -30,13 +31,14 @@ describe("crawlSeeds", () => {
     );
     expect(seeds).toEqual({
       urls: [
-        "https://403bplan.net/",
-        "https://403bplan.net/contact-us/",
-        "https://403bplan.net/news/",
+        { url: "https://403bplan.net/", postType: "page" },
+        { url: "https://403bplan.net/contact-us/", postType: "page" },
+        { url: "https://403bplan.net/news/", postType: "page" },
       ],
       truthSourceUrls: 3,
       truthSourceRestUrls: 3,
       truthSourceSitemapUrls: 2,
+      taxonomies: [],
     });
   });
 
@@ -55,10 +57,11 @@ describe("crawlSeeds", () => {
         result({ urls: [truthUrl("/")], counts: { total: 125, rest: 124, sitemap: 96 } }),
       ),
     ).toEqual({
-      urls: ["https://403bplan.net/"],
+      urls: [{ url: "https://403bplan.net/", postType: "page" }],
       truthSourceUrls: 125,
       truthSourceRestUrls: 124,
       truthSourceSitemapUrls: 96,
+      taxonomies: [],
     });
   });
 
@@ -72,10 +75,32 @@ describe("crawlSeeds", () => {
       truthSourceUrls: null,
       truthSourceRestUrls: null,
       truthSourceSitemapUrls: null,
+      taxonomies: [],
     });
   });
 
   it("carries no counts for a host that never answered", () => {
     expect(crawlSeeds(result({ kind: "unreachable" })).truthSourceUrls).toBeNull();
+  });
+
+  /**
+   * The post type and the taxonomy vocabulary are the two halves of PRD §4's Excluded
+   * rule, and this is the only place they cross from `packages/truth` into the crawl.
+   * Dropping either one turns every taxonomy archive back into a phantom orphan — the
+   * ~10% of tidewatermg.com's sitemap PRD §2 measured.
+   */
+  it("carries the post type of each URL and the site's taxonomy vocabulary", () => {
+    const seeds = crawlSeeds(
+      result({
+        urls: [
+          { ...truthUrl("/insights/a/"), postType: "insights" },
+          { ...truthUrl("/insights_category/featured/"), postType: "insights_category" },
+        ],
+        counts: { total: 2, rest: 2, sitemap: 2 },
+        taxonomies: ["category", "insights_category"],
+      }),
+    );
+    expect(seeds.urls.map((u) => u.postType)).toEqual(["insights", "insights_category"]);
+    expect(seeds.taxonomies).toEqual(["category", "insights_category"]);
   });
 });

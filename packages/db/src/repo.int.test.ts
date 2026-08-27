@@ -385,6 +385,7 @@ describe("crawls truth-source counts", () => {
       truthSourceUrls,
       truthSourceRestUrls,
       truthSourceSitemapUrls,
+      taxonomies: [],
     });
 
   it("stores a union of the two sources, and reads all three back", async () => {
@@ -436,6 +437,7 @@ describe("crawl_diffs", () => {
       truthSourceUrls: null,
       truthSourceRestUrls: null,
       truthSourceSitemapUrls: null,
+      taxonomies: [],
     });
     await insertCrawlDiff(db.pool, {
       fromCrawlId: crawlId,

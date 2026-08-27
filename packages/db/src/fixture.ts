@@ -100,6 +100,13 @@ export interface FixtureCrawl {
   readonly truthSourceUrls: number | null;
   readonly truthSourceRestUrls: number | null;
   readonly truthSourceSitemapUrls: number | null;
+  /**
+   * The site's taxonomy vocabulary (`010`), which turns a page's `postType` into PRD
+   * §4's Excluded decision. Optional **in the JSON**, defaulting to empty: empty is "no
+   * taxonomy name is known", which excludes nothing — the only default here that cannot
+   * delete a finding from the fixture's own answer.
+   */
+  readonly taxonomies: readonly string[];
   /** `null` means "use the clock injected into `loadFixture`". */
   readonly startedAt: Date | null;
   readonly finishedAt: Date | null;
@@ -247,6 +254,7 @@ function parseCrawl(
     deployedTag: f.optStr("deployedTag"),
     registrySha: f.optStr("registrySha"),
     wasThrottled: f.optBool("wasThrottled") ?? false,
+    taxonomies: f.optStrArray("taxonomies") ?? [],
   };
   f.done();
   return crawl;
@@ -441,6 +449,7 @@ export async function loadFixture(
       // pages_seen; accepting a separate number would let the two disagree.
       pagesSeen: fixture.pages.length,
       wasThrottled: fixture.crawl.wasThrottled,
+      taxonomies: fixture.crawl.taxonomies,
       truthSourceUrls: fixture.crawl.truthSourceUrls,
       truthSourceRestUrls: fixture.crawl.truthSourceRestUrls,
       truthSourceSitemapUrls: fixture.crawl.truthSourceSitemapUrls,

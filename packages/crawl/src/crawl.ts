@@ -146,15 +146,30 @@ async function openCrawl(
     truthSourceUrls: seeds.truthSourceUrls,
     truthSourceRestUrls: seeds.truthSourceRestUrls,
     truthSourceSitemapUrls: seeds.truthSourceSitemapUrls,
+    // The vocabulary that turns the post types below into PRD §4's Excluded decision.
+    // Stored on the crawl so that a later `analyse` classifies against the vocabulary
+    // this crawl was seeded with (010).
+    taxonomies: seeds.taxonomies,
   });
 
   // The homepage goes in first so that it is fetched first — and, under a sample
   // ceiling, so that it is fetched at all. `in_truth_source` is true only if the
   // inventory actually lists it; `addToFrontier` keeps the first answer, so the seed
   // below cannot change it.
+  const seeded = seeds.urls.find((seed) => seed.url === home);
   await addToFrontier(pool, crawlRow.id, [
-    { urlNormalized: home, inTruthSource: seeds.urls.includes(home) },
-    ...seeds.urls.map((url) => ({ urlNormalized: url, inTruthSource: true })),
+    {
+      urlNormalized: home,
+      inTruthSource: seeded !== undefined,
+      // The inventory's own post type for the homepage when it lists one; null is the
+      // honest answer when it does not, and `addToFrontier` keeps this first row.
+      postType: seeded?.postType ?? null,
+    },
+    ...seeds.urls.map((seed) => ({
+      urlNormalized: seed.url,
+      inTruthSource: true,
+      postType: seed.postType,
+    })),
   ]);
   return crawlRow.id;
 }
@@ -273,6 +288,7 @@ async function run(
         record = recordPage({
           url,
           inTruthSource: entry.inTruthSource,
+          postType: entry.postType,
           site: hosts,
           status: outcome.status,
           headers: outcome.headers,

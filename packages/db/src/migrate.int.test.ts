@@ -175,6 +175,7 @@ describe("007 reclassifies the rows it invalidates", () => {
       "007_drop_soft_orphan.sql",
       "008_sample_scope.sql",
       "009_frontier.sql",
+      "010_non_content_provenance.sql",
     ]);
 
     const { rows } = await db.pool.query<{ path: string; class: string }>(

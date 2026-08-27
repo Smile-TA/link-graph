@@ -5,6 +5,15 @@ export interface FrontierEntry {
   readonly urlNormalized: string;
   /** True for the truth source's own URLs, false for anything discovered. */
   readonly inTruthSource: boolean;
+  /**
+   * The CMS object the truth source named for this URL — a post type slug, a taxonomy
+   * slug, or `author` (step 5's provenance). `null` is "no source named one", never
+   * content and never non-content; a discovered URL is always null.
+   *
+   * It is carried here for the reason `in_truth_source` is: the seed list is gone by
+   * the time the page is fetched, and on a resumed crawl it went with the process.
+   */
+  readonly postType: string | null;
 }
 
 export interface FrontierRow extends FrontierEntry {
@@ -40,11 +49,17 @@ export async function addToFrontier(
 ): Promise<number> {
   if (entries.length === 0) return 0;
   const { rowCount } = await db.query(
-    `INSERT INTO crawl_frontier (crawl_id, url_normalized, in_truth_source)
-     SELECT $1, u.url, u.in_truth_source
-     FROM unnest($2::text[], $3::boolean[]) AS u(url, in_truth_source)
+    `INSERT INTO crawl_frontier (crawl_id, url_normalized, in_truth_source, post_type)
+     SELECT $1, u.url, u.in_truth_source, u.post_type
+     FROM unnest($2::text[], $3::boolean[], $4::text[])
+       AS u(url, in_truth_source, post_type)
      ON CONFLICT (crawl_id, url_normalized) DO NOTHING`,
-    [crawlId, entries.map((e) => e.urlNormalized), entries.map((e) => e.inTruthSource)],
+    [
+      crawlId,
+      entries.map((e) => e.urlNormalized),
+      entries.map((e) => e.inTruthSource),
+      entries.map((e) => e.postType),
+    ],
   );
   return rowCount ?? 0;
 }
@@ -62,7 +77,7 @@ export async function nextFrontierUrl(
 ): Promise<FrontierRow | null> {
   const { rows } = await db.query<FrontierRow>(
     `SELECT url_normalized AS "urlNormalized", in_truth_source AS "inTruthSource",
-            attempts
+            post_type AS "postType", attempts
      FROM crawl_frontier
      WHERE crawl_id = $1 AND fetched_at IS NULL
      ORDER BY id

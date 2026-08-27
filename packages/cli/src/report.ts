@@ -329,16 +329,27 @@ function orphanSummary(report: CrawlReport): string {
     return prosaicRow(
       "Orphans",
       `none found, and none could be: no page of the truth source was assessed. ` +
-        `${report.metrics.excluded} page(s) are excluded by intent — noindex, a ` +
-        `canonical pointing elsewhere, a redirect or an ignore_paths match (PRD §2) — ` +
+        `${report.metrics.excluded} page(s) are excluded — noindex, a canonical ` +
+        `pointing elsewhere, a redirect, an ignore_paths match, or a non-content type ` +
+        `such as a taxonomy or author archive (PRD §2, §4) — ` +
         `so the orphan question was asked of nothing. A site-wide noindex, as staging ` +
         `environments carry, produces exactly this`,
     );
   }
   if (orphans === 0) {
-    return row(
+    // "every URL in the truth source" would be false whenever anything was excluded —
+    // and since 010 that includes every taxonomy and author archive, which is most
+    // WordPress sites. The question was asked of the pages that were assessed, and the
+    // count of the ones it was not asked of belongs in the same sentence.
+    const aside =
+      report.metrics.excluded === 0
+        ? ""
+        : ` (${report.metrics.excluded} excluded page(s) were not assessed)`;
+    // `prosaicRow` and not `row`: this sentence is now past the 88-column width that
+    // `row` does not wrap, as the branch above it already was.
+    return prosaicRow(
       "Orphans",
-      `none — every URL in this site's truth source has at least one inbound internal link`,
+      `none — every URL assessed has at least one inbound internal link${aside}`,
     );
   }
   return row("Orphans", `${orphans} — listed below`);

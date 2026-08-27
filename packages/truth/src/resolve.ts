@@ -21,6 +21,7 @@ import type { HttpResult, TruthDeps } from "./http.js";
 import {
   collectionUrl,
   contentPostTypes,
+  declaredTaxonomies,
   parseCollectionPage,
   parsePostTypes,
   skipReason,
@@ -33,10 +34,11 @@ import {
   restMissing,
   sitemapInvisible,
   type FoundUrl,
+  type SourceUrl,
   type TruthCounts,
   type TruthUrl,
 } from "./inventory.js";
-import { readSitemapResponse, SITEMAP_CANDIDATES } from "./sitemap.js";
+import { readSitemapResponse, sitemapChild, SITEMAP_CANDIDATES } from "./sitemap.js";
 
 /**
  * `unreachable` is the fourth value, and PRD §3 lists three.
@@ -113,6 +115,17 @@ export interface TruthSourceResult {
   /** Empty unless REST's type list was readable. */
   readonly postTypes: readonly PostTypeInventory[];
   readonly counts: TruthCounts;
+  /**
+   * Every taxonomy this site registers, sorted — `declaredTaxonomies` over the
+   * `/wp/v2/types` response, and nothing else. It is what turns a URL's post type into
+   * PRD §4's Excluded decision, and it is per-site because the vocabulary is:
+   * integrity.com has five taxonomy children of 14, tidewatermg.com has 17 of 34.
+   *
+   * Empty means "no taxonomy name is known here", never "this site has none of them":
+   * a site whose REST could not be read declares nothing, and an empty vocabulary
+   * excludes nothing — the direction that keeps a finding rather than deleting one.
+   */
+  readonly taxonomies: readonly string[];
   readonly findings: readonly TruthFinding[];
   readonly requests: number;
 }
@@ -140,7 +153,7 @@ const DEFAULT_MAX_REQUESTS = 1000;
 interface Enumeration {
   /** `ok` is the only outcome whose `urls` may be used; the rest carry none. */
   readonly kind: "ok" | "absent" | "incomplete" | "unreachable";
-  readonly urls: readonly { url: string; postType: string | null }[];
+  readonly urls: readonly SourceUrl[];
   readonly findings: readonly TruthFinding[];
   readonly requests: number;
 }
@@ -326,15 +339,25 @@ export async function enumerateSitemap(
   maxRequests: number,
 ): Promise<Enumeration> {
   const findings: TruthFinding[] = [];
-  const locs: string[] = [];
+  const found: SourceUrl[] = [];
   const seen = new Set<string>();
   let requests = 0;
-  const incomplete = (detail: string): Enumeration => ({
-    kind: "incomplete",
+  /**
+   * An enumeration that produced no inventory. One factory rather than four literals,
+   * so that the next field on `Enumeration` is one edit rather than a hunt through four
+   * copies of the same empty object.
+   */
+  const empty = (
+    kind: Exclude<Enumeration["kind"], "ok">,
+    finding?: TruthFinding,
+  ): Enumeration => ({
+    kind,
     urls: [],
-    findings: [...findings, { kind: "sitemap-incomplete", detail }],
+    findings: finding === undefined ? findings : [...findings, finding],
     requests,
   });
+  const incomplete = (detail: string) =>
+    empty("incomplete", { kind: "sitemap-incomplete", detail });
 
   /** One sitemap URL, following at most one redirect. */
   const fetchDoc = async (url: string) => {
@@ -396,7 +419,9 @@ export async function enumerateSitemap(
             `${read.doc.locs.length} entr(ies), which is used`,
         });
       }
-      return { kind: "doc" as const, doc: read.doc };
+      // The URL as finally fetched, not as asked for: a child sitemap that redirected
+      // is named by where it landed, and that name is the provenance below.
+      return { kind: "doc" as const, doc: read.doc, url };
     }
     return { kind: "error" as const, detail: `${url} redirects more than once` };
   };
@@ -430,24 +455,32 @@ export async function enumerateSitemap(
   if (refused.length > 0 && entry?.kind !== "doc") {
     return incomplete(refused.join("; "));
   }
-  if (entry === null || entry.kind === "absent") {
-    return { kind: "absent", urls: [], findings, requests };
-  }
+  if (entry === null || entry.kind === "absent") return empty("absent");
   if (entry.kind === "unreachable") {
     // Recorded, not just returned: `decide` reads the findings, and a host that answered
     // REST with a 404 and then dropped the sitemap connection would otherwise resolve as
     // "this site has no truth source" — permanently, and quietly.
-    return {
-      kind: "unreachable",
-      urls: [],
-      findings: [...findings, { kind: "sitemap-incomplete", detail: entry.detail }],
-      requests,
-    };
+    return empty("unreachable", {
+      kind: "sitemap-incomplete",
+      detail: entry.detail,
+    });
   }
   if (entry.kind === "error") return incomplete(entry.detail);
 
+  /**
+   * The URLs of one document, each tagged with the CMS object its file is named after.
+   *
+   * This is the provenance step 5 discarded, and PRD §4's Excluded class has nothing to
+   * read without it: a flat `sitemap.xml` names nothing and yields nulls, which stay
+   * "unknown" all the way to `pages.post_type`.
+   */
+  const collect = (from: string, locs: readonly string[]) => {
+    const postType = sitemapChild(from);
+    for (const url of locs) found.push({ url, postType });
+  };
+
   const queue = entry.doc.kind === "index" ? [...entry.doc.locs] : [];
-  if (entry.doc.kind === "urlset") locs.push(...entry.doc.locs);
+  if (entry.doc.kind === "urlset") collect(entry.url, entry.doc.locs);
   while (queue.length > 0) {
     // Non-null: length was just checked.
     const child = queue.shift() as string;
@@ -465,18 +498,11 @@ export async function enumerateSitemap(
     }
     // PRD §4: index sitemaps nest. A nested index contributes children, not URLs.
     if (doc.doc.kind === "index") queue.push(...doc.doc.locs);
-    else locs.push(...doc.doc.locs);
+    else collect(doc.url, doc.doc.locs);
   }
 
-  if (locs.length === 0) {
-    return { kind: "absent", urls: [], findings, requests };
-  }
-  return {
-    kind: "ok",
-    urls: locs.map((url) => ({ url, postType: null })),
-    findings,
-    requests,
-  };
+  if (found.length === 0) return empty("absent");
+  return { kind: "ok", urls: found, findings, requests };
 }
 
 export async function resolveTruthSource(
@@ -569,6 +595,7 @@ export async function resolveTruthSource(
     urls,
     postTypes: rest.kind === "ok" ? allPostTypes(declared ?? [], rest.postTypes) : [],
     counts,
+    taxonomies: declaredTaxonomies(declared ?? []),
     findings,
     requests,
   };

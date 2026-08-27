@@ -27,6 +27,7 @@ const url = (href: string): NormalizedUrl => {
 /** A 200 text/html response, which is what 13 of the 13 sitemap URLs returned. */
 const served = (input: Partial<RecordInput> & { url: NormalizedUrl }): RecordInput => ({
   inTruthSource: true,
+  postType: null,
   site,
   status: 200,
   headers: { "content-type": "text/html; charset=UTF-8" },
@@ -95,6 +96,33 @@ describe("headerNoindex", () => {
 });
 
 describe("recordPage", () => {
+  /**
+   * The truth source knew the post type of every inventory URL and step 6 threw it
+   * away, which left `pages.post_type` NULL for all 2,454 rows of the integrity.com
+   * crawl and PRD §2's Excluded classes with nothing to read. The frontier carries it
+   * now, because on a resumed crawl the seed list is gone with the process that held it.
+   */
+  it("records the post type the frontier carried for this URL", () => {
+    const record = recordPage(
+      served({
+        url: url("https://403bplan.net/newsletters/"),
+        postType: "page",
+        body: html("newsletters.html"),
+      }),
+    );
+    expect(record.page.postType).toBe("page");
+    // And the other direction: nothing named a post type for a discovered URL, and
+    // `null` must survive as "unknown" rather than acquiring a default.
+    expect(
+      recordPage(
+        served({
+          url: url("https://403bplan.net/newsletters/"),
+          body: html("newsletters.html"),
+        }),
+      ).page.postType,
+    ).toBeNull();
+  });
+
   it("records a served page and its links", () => {
     const record = recordPage(
       served({ url: url("https://403bplan.net/"), body: html("home.html") }),

@@ -93,11 +93,25 @@ async function makeSite(overrides: Partial<SiteInput> = {}): Promise<SiteRow> {
   return upsertSite(db.pool, site);
 }
 
+/** The one seed given a post type of its own — see `seedsOf`. */
+const PLANTED = `https://${HOST}/newsletters/`;
+
+/**
+ * Seeds from a plain URL list. Every one of these comes from `page-sitemap.xml` on the
+ * real 403bplan.net, so `page` is the post type the truth source names for all 13 —
+ * which is what `pages.post_type` must then hold.
+ *
+ * `/newsletters/` is given a different one, and it is a plant: a crawler that applied
+ * one seed's post type to every row, or that re-read the seed list instead of the
+ * frontier, passes a test where all 13 agree. This is the shape of a real site, where
+ * `post-sitemap.xml` and `page-sitemap.xml` are two children of one index.
+ */
 const seedsOf = (urls: readonly string[]): CrawlSeeds => ({
-  urls,
+  urls: urls.map((url) => ({ url, postType: url === PLANTED ? "post" : "page" })),
   truthSourceUrls: urls.length,
   truthSourceRestUrls: null,
   truthSourceSitemapUrls: urls.length,
+  taxonomies: [],
 });
 
 const deps = (fetcher: CrawlFetcher): Partial<CrawlDeps> => ({ fetcher, limiter, now });
@@ -157,6 +171,13 @@ describe("crawl", () => {
     expect(pages.every((page) => page.statusCode === 200)).toBe(true);
     expect(pages.every((page) => page.indexable)).toBe(true);
     expect(pages.every((page) => page.inTruthSource)).toBe(true);
+    // The truth source's provenance, from each seed through the frontier onto its own
+    // row. It was NULL for all 2,454 pages of the integrity.com crawl, which left PRD
+    // §2's Excluded classes with nothing to read (010).
+    const postTypes = new Map(pages.map((page) => [page.path, page.postType]));
+    expect(postTypes.get("/newsletters/")).toBe("post");
+    expect(postTypes.get("/")).toBe("page");
+    expect([...postTypes.values()].filter((type) => type === "page")).toHaveLength(12);
     // analyse's output, untouched by the crawler: NULL means "not analysed", and a
     // default would make an un-analysed crawl look analysed.
     expect(pages.every((page) => page.depth === null && page.class === null)).toBe(true);
@@ -457,6 +478,9 @@ describe("crawl", () => {
       redirectTo: `https://${HOST}/newsletters/`,
       // Discovered by following the chain, not listed by the truth source.
       inTruthSource: false,
+      // And so nothing named its post type. NULL is "unknown" — never read as content,
+      // never as non-content (010).
+      postType: null,
     });
     expect(byPath.get("/newsletters/")).toMatchObject({
       statusCode: 200,
@@ -578,6 +602,7 @@ describe("crawl", () => {
         truthSourceUrls: null,
         truthSourceRestUrls: null,
         truthSourceSitemapUrls: null,
+        taxonomies: [],
       },
       deps(server.fetcher),
     );

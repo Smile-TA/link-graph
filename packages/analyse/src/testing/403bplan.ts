@@ -110,6 +110,13 @@ const SEARCH_CAPTURE: Capture = { url: SEARCH_URL, file: "search-403b.html" };
 
 export interface FixturePageJson {
   readonly url: string;
+  /**
+   * The CMS object the truth source named for this URL (step 5's provenance). Absent
+   * throughout this fixture: 403bplan.net has one `page-sitemap.xml` child and no
+   * taxonomy at all, so a post type here would be invented. A test that needs one
+   * plants it, and says so.
+   */
+  readonly postType?: string;
   /** `null` means the crawl never fetched it — a case the refusal tests need. */
   readonly statusCode: number | null;
   readonly inTruthSource: boolean;

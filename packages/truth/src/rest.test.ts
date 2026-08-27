@@ -17,6 +17,7 @@ import {
   contentPostTypes,
   parseCollectionPage,
   parsePostTypes,
+  declaredTaxonomies,
   NON_CONTENT_POST_TYPES,
 } from "./rest.js";
 import { recordedBody, recordedResponse } from "./testing/recorded.js";
@@ -66,7 +67,12 @@ describe("parsePostTypes over real /wp-json/wp/v2/types", () => {
 
   it("reads rest_base and rest_namespace rather than assuming the slug", () => {
     const media = types("integrity.com").find((t) => t.slug === "attachment");
-    expect(media).toEqual({ slug: "attachment", restBase: "media", namespace: "wp/v2" });
+    expect(media).toEqual({
+      slug: "attachment",
+      restBase: "media",
+      namespace: "wp/v2",
+      taxonomies: [],
+    });
   });
 
   it("drops exactly the nine WordPress-internal types, on every site measured", () => {
@@ -174,5 +180,59 @@ describe("parseCollectionPage over real collections", () => {
     expect(() =>
       parseCollectionPage({ status: 200, headers: {}, body: `[{"id":1}]` }),
     ).toThrow(/link/);
+  });
+});
+
+/**
+ * The taxonomy vocabulary, out of the request the resolver already makes.
+ *
+ * `/wp/v2/types` declares, per post type, the taxonomies registered for it — and that
+ * is the only thing in the estate that can tell `insights_category-sitemap.xml` (a
+ * taxonomy archive, PRD §4 Excluded) from `insights-sitemap.xml` (a content post type).
+ * It costs no extra request.
+ */
+describe("declaredTaxonomies", () => {
+  it("reads integrity.com's eight, which cover all five of its taxonomy children", () => {
+    expect(declaredTaxonomies(types("integrity.com"))).toEqual([
+      "category",
+      "family_category",
+      "insights_category",
+      "nav_menu",
+      "post_tag",
+      "teammember_level",
+      "wealth_category",
+      "wp_pattern_category",
+    ]);
+  });
+
+  it("reads tidewatermg.com's 23, for the site PRD §2 measured 164 archives on", () => {
+    const tidewater = declaredTaxonomies(types("tidewatermg.com"));
+    expect(tidewater).toHaveLength(23);
+    expect(tidewater).toContain("gblocks_pattern_collections");
+    expect(tidewater).toContain("university-series-taxonomy");
+  });
+
+  it("is four on a site with no custom taxonomy at all (403bplan.net)", () => {
+    expect(declaredTaxonomies(types("403bplan.net"))).toEqual([
+      "category",
+      "nav_menu",
+      "post_tag",
+      "wp_pattern_category",
+    ]);
+  });
+
+  /**
+   * A name that is both would exclude a real content post type, which is the one
+   * direction PRD §13 cannot afford — so the post types win and the name is dropped
+   * from the vocabulary. No estate site has the collision (checked on all four
+   * recorded type maps); the rule is here so that one cannot cause the failure
+   * silently.
+   */
+  it("never lets a declared post type into the taxonomy vocabulary", () => {
+    const collided = parsePostTypes({
+      page: { slug: "page", rest_base: "pages", taxonomies: ["offer"] },
+      offer: { slug: "offer", rest_base: "offers", taxonomies: [] },
+    });
+    expect(declaredTaxonomies(collided)).toEqual([]);
   });
 });

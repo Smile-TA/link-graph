@@ -16,11 +16,14 @@ import type { TruthSourceResult } from "@link-graph/truth";
 
 export function crawlSeeds(truth: TruthSourceResult): CrawlSeeds {
   return {
-    urls: truth.urls.map((url) => url.url),
+    urls: truth.urls.map((url) => ({ url: url.url, postType: url.postType })),
     // `null`, never 0, for a site with no inventory: `006_truth_source.sql` refuses a
     // size of zero, and a zero here would be a denominator nobody measured.
     truthSourceUrls: truth.counts.total,
     truthSourceRestUrls: truth.counts.rest,
     truthSourceSitemapUrls: truth.counts.sitemap,
+    // The other half of PRD §4's Excluded rule: the post type above says which CMS
+    // object a URL is, and this says which of those names are taxonomies on this site.
+    taxonomies: truth.taxonomies,
   };
 }

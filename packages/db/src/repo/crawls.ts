@@ -37,6 +37,16 @@ export interface CrawlInput {
   readonly truthSourceUrls: number | null;
   readonly truthSourceRestUrls: number | null;
   readonly truthSourceSitemapUrls: number | null;
+  /**
+   * The site's taxonomy vocabulary as this crawl resolved it (`010`, PRD §4). It is
+   * what turns `pages.post_type` into the Excluded decision, and it lives on the crawl
+   * rather than the site so that re-analysing an old crawl uses the vocabulary that
+   * crawl was classified against.
+   *
+   * Empty means no name is known — a sitemap-only site declares none — and an empty
+   * vocabulary excludes nothing.
+   */
+  readonly taxonomies: readonly string[];
 }
 
 export interface CrawlRow extends CrawlInput {
@@ -48,14 +58,14 @@ const COLUMNS = `id, site_id AS "siteId", env, started_at AS "startedAt",
   registry_sha AS "registrySha", pages_seen AS "pagesSeen",
   was_throttled AS "wasThrottled", truth_source_urls AS "truthSourceUrls",
   truth_source_rest_urls AS "truthSourceRestUrls",
-  truth_source_sitemap_urls AS "truthSourceSitemapUrls"`;
+  truth_source_sitemap_urls AS "truthSourceSitemapUrls", taxonomies`;
 
 export async function insertCrawl(db: Queryable, crawl: CrawlInput): Promise<CrawlRow> {
   const { rows } = await db.query<CrawlRow>(
     `INSERT INTO crawls (site_id, env, started_at, finished_at, status, deployed_tag,
                          registry_sha, pages_seen, was_throttled, truth_source_urls,
-                         truth_source_rest_urls, truth_source_sitemap_urls)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                         truth_source_rest_urls, truth_source_sitemap_urls, taxonomies)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING ${COLUMNS}`,
     [
       crawl.siteId,
@@ -70,6 +80,7 @@ export async function insertCrawl(db: Queryable, crawl: CrawlInput): Promise<Cra
       crawl.truthSourceUrls,
       crawl.truthSourceRestUrls,
       crawl.truthSourceSitemapUrls,
+      crawl.taxonomies,
     ],
   );
   const row = rows[0];

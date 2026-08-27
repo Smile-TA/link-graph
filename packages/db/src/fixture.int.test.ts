@@ -248,6 +248,10 @@ describe("loadFixture: every column, at a non-default value", () => {
       truthSourceUrls: 124,
       truthSourceRestUrls: 124,
       truthSourceSitemapUrls: 96,
+      // Non-default: `{}` is the SQL default, so an empty array here would prove
+      // nothing about the column. These are three of tidewatermg.com's own 23 declared
+      // taxonomies, from its recorded /wp/v2/types (010).
+      taxonomies: ["category", "post_tag", "team-department"],
       wasThrottled: true,
     },
     pages: [
@@ -319,6 +323,7 @@ describe("loadFixture: every column, at a non-default value", () => {
       truthSourceUrls: 124,
       truthSourceRestUrls: 124,
       truthSourceSitemapUrls: 96,
+      taxonomies: ["category", "post_tag", "team-department"],
     });
   });
 

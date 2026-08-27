@@ -5,7 +5,7 @@
  * of them contradict `census.json` (see `agent.familyfirstlife.com` below).
  */
 import { describe, expect, it } from "vitest";
-import { parseSitemap, SITEMAP_CANDIDATES } from "./sitemap.js";
+import { parseSitemap, sitemapChild, SITEMAP_CANDIDATES } from "./sitemap.js";
 import { recordedBody, recordedResponse } from "./testing/recorded.js";
 
 describe("parseSitemap over real estate sitemaps", () => {
@@ -132,5 +132,71 @@ describe("agent.familyfirstlife.com — the census's 2,000", () => {
     expect((restTotal - remainder) / 2000).toBe((children ?? 0) - 1);
     // census.json records 2,000 URLs and 1 child for this host.
     expect(restTotal).toBeGreaterThan(2000 * 29);
+  });
+});
+
+/**
+ * The child sitemap's own name — the only provenance a sitemap-resolved URL can carry.
+ *
+ * PRD §4 wants taxonomy archives, author archives and page-builder artifacts in the
+ * Excluded class, and measured ~10% of tidewatermg.com's sitemap is one of the three.
+ * Nothing in a `<urlset>` says which; the file the URL came out of does, and step 5 was
+ * throwing that name away.
+ */
+describe("sitemapChild: which CMS object a child sitemap lists", () => {
+  it("reads Yoast's <object>-sitemap.xml — every name below is a recorded child", () => {
+    expect(sitemapChild("https://integrity.com/page-sitemap.xml")).toBe("page");
+    expect(sitemapChild("https://integrity.com/insights_category-sitemap.xml")).toBe(
+      "insights_category",
+    );
+    expect(sitemapChild("https://tidewatermg.com/bricks_template-sitemap.xml")).toBe(
+      "bricks_template",
+    );
+    expect(sitemapChild("https://tidewatermg.com/author-sitemap.xml")).toBe("author");
+  });
+
+  it("names all 34 of tidewatermg.com's children and all 14 of integrity.com's", () => {
+    for (const [host, children] of [
+      ["tidewatermg.com", 34],
+      ["integrity.com", 14],
+    ] as const) {
+      const locs = parseSitemap(recordedBody(`https://${host}/sitemap_index.xml`))?.locs;
+      // The count is asserted here and not only implied: a recorded index that had been
+      // truncated would otherwise leave this green — the census failure PRD §1 records.
+      expect(locs).toHaveLength(children);
+      // Not one of them is unnamed: a child whose name this cannot read is a whole post
+      // type or taxonomy that would carry no provenance at all.
+      expect(locs?.filter((loc) => sitemapChild(loc) === null)).toEqual([]);
+    }
+  });
+
+  /**
+   * WP core's own sitemap. `wp-sitemap-posts-page-1.xml` is recorded
+   * (agent.familyfirstlife.com, 30 children); the taxonomies and users forms are core's
+   * documented naming and **no estate host serves one**, so the hosts below are named
+   * to say so rather than to imply a recording.
+   */
+  it("reads WP core's form", () => {
+    expect(
+      sitemapChild("https://agent.familyfirstlife.com/wp-sitemap-posts-page-1.xml"),
+    ).toBe("page");
+    expect(
+      sitemapChild(
+        "https://not-in-this-estate.example/wp-sitemap-taxonomies-category-1.xml",
+      ),
+    ).toBe("category");
+    expect(
+      sitemapChild("https://not-in-this-estate.example/wp-sitemap-users-1.xml"),
+    ).toBe("author");
+  });
+
+  it("names no object for an index or an ordinary page", () => {
+    // The index candidates most of all: `/wp-sitemap.xml` ends in `-sitemap.xml` and
+    // would otherwise be read as a post type called `wp`.
+    for (const candidate of SITEMAP_CANDIDATES) {
+      expect(sitemapChild(`https://403bplan.net${candidate}`)).toBeNull();
+    }
+    expect(sitemapChild("https://403bplan.net/")).toBeNull();
+    expect(sitemapChild("https://403bplan.net/newsletters/")).toBeNull();
   });
 });

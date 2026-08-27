@@ -229,8 +229,8 @@ describe("formatReport", () => {
 /**
  * The printed line and the exit code have to agree. Exit 3 for a provably short
  * inventory (PRD §15, decided 2026-08-25) would otherwise sit under a table headed
- * "none — every URL in this site's truth source has at least one inbound internal
- * link", which is the clean bill of health the code is refusing to give.
+ * "none — every URL assessed has at least one inbound internal link", which is the
+ * clean bill of health the code is refusing to give.
  */
 describe("formatReport when a source was lost", () => {
   const lostRest = (over = {}): CrawlReport =>
@@ -298,7 +298,22 @@ describe("formatReport when no page of the inventory was assessed", () => {
       metrics: metrics({ orphans: 0, linked: 9, excluded: 4 }),
       orphans: [],
     });
-    expect(formatReport(assessed)).toMatch(/at least one inbound internal link/);
+    const out = formatReport(assessed);
+    expect(out).toMatch(/at least one inbound internal link/);
+    // "every URL in the truth source" would be false the moment anything is excluded,
+    // and since 010 that is every taxonomy and author archive — so the number of pages
+    // the question was not asked of is part of the same sentence, and asserted here
+    // rather than merely printed.
+    // Whitespace collapsed: the row wraps at 88 columns, so the phrase spans two lines.
+    expect(out.replace(/\s+/g, " ")).toContain("(4 excluded page(s) were not assessed)");
+  });
+
+  it("says nothing about exclusions when there were none", () => {
+    const clean = report({
+      metrics: metrics({ orphans: 0, linked: 13, excluded: 0 }),
+      orphans: [],
+    });
+    expect(formatReport(clean)).not.toContain("excluded page(s)");
   });
 });
 

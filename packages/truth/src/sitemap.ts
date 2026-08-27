@@ -91,3 +91,61 @@ export function readSitemapResponse(
   const ok = response.status >= 200 && response.status < 300;
   return { kind: "sitemap", doc, degraded: ok ? null : `HTTP ${response.status}` };
 }
+
+/**
+ * WP core's own sitemap: `wp-sitemap-posts-page-1.xml`,
+ * `wp-sitemap-taxonomies-category-1.xml`, `wp-sitemap-users-1.xml`.
+ *
+ * Only the first is measured on this estate — `agent.familyfirstlife.com` lists 30
+ * `posts-page` children and nothing else — so the other two are core's documented
+ * naming rather than a recording. They are here because without them a core-generated
+ * taxonomy archive carries no name at all, and because neither pattern can match a name
+ * any other generator produces.
+ *
+ * **Which of the two a name is, this deliberately does not say.** Gate 2: the flag
+ * would have been true for no host in the estate — every one of the seven WordPress
+ * hosts probed serves WP REST, whose `taxonomies` field names the same vocabulary — and
+ * the machinery to carry it as far as `classifyPage` could not be exercised against any
+ * recorded response. So `posts` and `taxonomies` are one pattern here: what is left is
+ * name extraction, and every branch of that is tested.
+ */
+const CORE_OBJECT = /^\/wp-sitemap-(?:posts|taxonomies)-([^/]+)-\d+\.xml$/;
+const CORE_USERS = /^\/wp-sitemap-users-\d+\.xml$/;
+
+/**
+ * Yoast: `<object>-sitemap.xml`, and `<object>-sitemap2.xml` onwards once an object has
+ * more entries than one file holds. Measured on integrity.com (14 children) and
+ * tidewatermg.com (34); the numbered form is Yoast's documented pagination and no
+ * recorded index needs it, so the `\d*` is there to name a child rather than lose one.
+ *
+ * `[^/]+` and not `.+`, here and above: a greedy `.+` reads `/blog/page-sitemap.xml` as
+ * an object called `blog/page` rather than declining to name it. Unreachable today —
+ * every candidate is root-relative — and the cost of being wrong is a name that matches
+ * nothing, which under-excludes rather than deleting a finding.
+ */
+const YOAST = /^\/([^/]+)-sitemap\d*\.xml$/;
+
+/**
+ * The CMS object a child sitemap lists — a post type slug, a taxonomy slug, or
+ * `author` — or `null` when its URL does not say.
+ *
+ * This is the provenance PRD §4 needs and step 5 discarded: taxonomy archives are 17%
+ * of tidewatermg.com's sitemap and 1% of integrity.com's, and nothing inside a child
+ * sitemap distinguishes them from the site's content.
+ */
+export function sitemapChild(url: string): string | null {
+  let path: string;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    return null;
+  }
+  // The index candidates first, because `/wp-sitemap.xml` ends in `-sitemap.xml` and
+  // the Yoast pattern would otherwise read it as an object called `wp`.
+  if (SITEMAP_CANDIDATES.some((candidate) => candidate === path)) return null;
+  // Normalized to Yoast's spelling rather than kept as `users`: PRD §2's class is
+  // "author archives", and the same page carrying a different `post_type` depending on
+  // which plugin generated the sitemap would be one fact with two names.
+  if (CORE_USERS.test(path)) return "author";
+  return CORE_OBJECT.exec(path)?.[1] ?? YOAST.exec(path)?.[1] ?? null;
+}

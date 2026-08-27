@@ -20,7 +20,11 @@ export const PAGE_CLASSES = [
   "linked",
   /** In the truth source, includable, and nothing links here at all (PRD §2). */
   "orphan",
-  /** Not an orphan by intent: noindex, canonical elsewhere, a redirect, ignore_paths. */
+  /**
+   * Not in the orphan question: noindex, canonical elsewhere, a redirect, an
+   * ignore_paths match (PRD §2) — or not content at all, which is PRD §4's taxonomy
+   * archives, author archives and page-builder artifacts, decided from `post_type`.
+   */
   "excluded",
   /** Crawled, but the inventory does not list it, so the question does not apply. */
   "not_in_truth_source",
@@ -39,6 +43,13 @@ export interface PageInput {
   /** Node identity: absolute, normalized, canonical host. */
   readonly urlNormalized: string;
   readonly path: string;
+  /**
+   * The CMS object this URL came from: a post type slug, a taxonomy slug, or `author`
+   * for an archive. The truth source's provenance (step 5), carried through
+   * `crawl_frontier.post_type` (010) because the seed list is gone by the time the page
+   * is fetched. `null` = no source named one, which is never read as content and never
+   * as non-content.
+   */
   readonly postType: string | null;
   /** `null` = never fetched. Never read as 200. */
   readonly statusCode: number | null;

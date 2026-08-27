@@ -15,8 +15,8 @@ import {
   paginationShortfall,
   resolveTruthSource,
 } from "./resolve.js";
-import { parsePostTypes, type RestPostType } from "./rest.js";
-import { readSitemapResponse } from "./sitemap.js";
+import { declaredTaxonomies, parsePostTypes, type RestPostType } from "./rest.js";
+import { parseSitemap, readSitemapResponse, sitemapChild } from "./sitemap.js";
 import { recordedBody, recordedResponse, recordedFetcher } from "./testing/recorded.js";
 
 const site = (host: string): SiteHosts & { siteId: string } => ({
@@ -28,10 +28,12 @@ const site = (host: string): SiteHosts & { siteId: string } => ({
 const FIELDS = "per_page=100&orderby=id&order=asc&_fields=id,link,type,status";
 /** `page` sits before `_fields` in the URL `collectionUrl` builds. */
 const PAGE_2 = "per_page=100&orderby=id&order=asc&page=2&_fields=id,link,type,status";
+/** One host's declared post types, straight out of its recorded `/wp/v2/types`. */
+const types = (host: string) =>
+  parsePostTypes(JSON.parse(recordedBody(`https://${host}/wp-json/wp/v2/types`)));
+
 const postType = (host: string, slug: string): RestPostType => {
-  const found = parsePostTypes(
-    JSON.parse(recordedBody(`https://${host}/wp-json/wp/v2/types`)),
-  ).find((t) => t.slug === slug);
+  const found = types(host).find((t) => t.slug === slug);
   if (found === undefined) throw new Error(`no post type ${slug} on ${host}`);
   return found;
 };
@@ -63,6 +65,14 @@ describe("resolveTruthSource: 403bplan.net, where both sources agree exactly", (
       "/test-pay-button/",
     ]);
     expect(new Set(result.urls.map((u) => u.postType))).toEqual(new Set(["page"]));
+    // The site's own taxonomy vocabulary, out of the same `/wp/v2/types` response —
+    // what tells a taxonomy archive from a content post type without a second request.
+    expect(result.taxonomies).toEqual([
+      "category",
+      "nav_menu",
+      "post_tag",
+      "wp_pattern_category",
+    ]);
   });
 
   it("enumerates the post types dynamically and reports what it skipped", async () => {
@@ -155,9 +165,13 @@ describe("resolveTruthSource: sitemap only", () => {
     expect(result.kind).toBe("sitemap");
     expect(result.counts).toEqual({ total: 13, rest: null, sitemap: 13 });
     expect(result.urls.every((u) => u.inSitemap && !u.inRest)).toBe(true);
-    // No post type is known from a sitemap; the sitemap does not carry one.
-    expect(result.urls.every((u) => u.postType === null)).toBe(true);
+    // The child sitemap the URLs came out of is `page-sitemap.xml`, so the post type is
+    // known even with no CMS to ask. Step 5 discarded that name and recorded null here.
+    expect(result.urls.every((u) => u.postType === "page")).toBe(true);
     expect(result.postTypes).toEqual([]);
+    // Nothing declares a taxonomy when REST cannot be read, and an empty vocabulary
+    // excludes nothing — the direction that keeps a finding rather than hiding one.
+    expect(result.taxonomies).toEqual([]);
   });
 });
 
@@ -543,5 +557,56 @@ describe("resolveTruthSource refuses rather than resolving to 'none'", () => {
     await expect(resolveTruthSource(site("403bplan.net"), deps)).rejects.toThrow(
       /could not be resolved: rest-incomplete.*rest_post_invalid_page_number/,
     );
+  });
+});
+
+/**
+ * The two sites PRD §2 and §4 measured, cross-checked from their recorded
+ * `/wp/v2/types` and sitemap index. Neither can be resolved end to end from fixtures —
+ * integrity.com is 34 responses and tidewatermg.com's children were never recorded — but
+ * the two documents that decide the Excluded class both are, and this is the arithmetic
+ * PRD §4 states.
+ */
+describe("the sitemap index, split by the site's own vocabulary", () => {
+  const split = (host: string) => {
+    const taxonomies = new Set(declaredTaxonomies(types(host)));
+    const locs = parseSitemap(recordedBody(`https://${host}/sitemap_index.xml`))?.locs;
+    const names = (locs ?? []).map((loc) => sitemapChild(loc) ?? loc);
+    return {
+      taxonomy: names.filter((name) => taxonomies.has(name)),
+      other: names.filter((name) => !taxonomies.has(name)),
+    };
+  };
+
+  /**
+   * PRD §4: "tidewatermg.com's 15 content post types … and the 18 taxonomy and author
+   * children". 17 taxonomy children plus `author` is that 18, and `bricks_template` is
+   * §4's page-builder artifact — the one child with a sitemap and no REST type at all.
+   */
+  it("finds tidewatermg.com's 17 taxonomy children, its author archive and bricks", () => {
+    const { taxonomy, other } = split("tidewatermg.com");
+    expect(taxonomy).toHaveLength(17);
+    expect(other).toHaveLength(17);
+    // Everything the vocabulary cannot name, named: 15 content post types, plus these.
+    expect(
+      other.filter((name) => name === "author" || name === "bricks_template"),
+    ).toEqual(["bricks_template", "author"]);
+  });
+
+  /**
+   * The nine orphans the 2026-08-25 integrity.com run reported were terms of four of
+   * these five taxonomies (`category`, `family_category`, `insights_category`,
+   * `wealth_category`); the fifth, `teammember_level`, had none in the orphan list.
+   */
+  it("finds integrity.com's five taxonomy children among fourteen", () => {
+    const { taxonomy, other } = split("integrity.com");
+    expect(taxonomy).toEqual([
+      "category",
+      "teammember_level",
+      "family_category",
+      "wealth_category",
+      "insights_category",
+    ]);
+    expect(other).toHaveLength(9);
   });
 });

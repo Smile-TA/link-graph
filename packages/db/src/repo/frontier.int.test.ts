@@ -58,6 +58,7 @@ async function newCrawl(): Promise<number> {
     truthSourceUrls: 13,
     truthSourceRestUrls: null,
     truthSourceSitemapUrls: 13,
+    taxonomies: [],
   });
   return crawl.id;
 }
@@ -69,7 +70,11 @@ describe("crawl_frontier", () => {
     await addToFrontier(
       db.pool,
       crawlId,
-      urls.map((urlNormalized) => ({ urlNormalized, inTruthSource: true })),
+      urls.map((urlNormalized) => ({
+        urlNormalized,
+        inTruthSource: true,
+        postType: null,
+      })),
     );
     expect((await nextFrontierUrl(db.pool, crawlId))?.urlNormalized).toBe(urls[0]);
     await markFrontierFetched(db.pool, crawlId, urls[0] ?? "", at);
@@ -92,23 +97,29 @@ describe("crawl_frontier", () => {
     const url = "https://403bplan.net/newsletters/";
     expect(
       await addToFrontier(db.pool, crawlId, [
-        { urlNormalized: url, inTruthSource: true },
+        { urlNormalized: url, inTruthSource: true, postType: "page" },
       ]),
     ).toBe(1);
     expect(
       await addToFrontier(db.pool, crawlId, [
-        { urlNormalized: url, inTruthSource: false },
+        { urlNormalized: url, inTruthSource: false, postType: null },
       ]),
     ).toBe(0);
+    // Both facts the truth source supplied survive the second insert: the page is still
+    // listed by the inventory, and it is still the post type the inventory named. A
+    // link from another page knows neither.
     expect(await nextFrontierUrl(db.pool, crawlId)).toMatchObject({
       inTruthSource: true,
+      postType: "page",
     });
   });
 
   it("refuses to mark a URL fetched twice, so a page row cannot be written twice", async () => {
     const crawlId = await newCrawl();
     const url = "https://403bplan.net/";
-    await addToFrontier(db.pool, crawlId, [{ urlNormalized: url, inTruthSource: true }]);
+    await addToFrontier(db.pool, crawlId, [
+      { urlNormalized: url, inTruthSource: true, postType: null },
+    ]);
     await markFrontierFetched(db.pool, crawlId, url, at);
     await expect(markFrontierFetched(db.pool, crawlId, url, at)).rejects.toThrow(
       /no pending frontier entry/,
@@ -118,7 +129,9 @@ describe("crawl_frontier", () => {
   it("leaves a failed URL pending, counts the attempt, and clears the error on success", async () => {
     const crawlId = await newCrawl();
     const url = "https://403bplan.net/disclosures/";
-    await addToFrontier(db.pool, crawlId, [{ urlNormalized: url, inTruthSource: true }]);
+    await addToFrontier(db.pool, crawlId, [
+      { urlNormalized: url, inTruthSource: true, postType: null },
+    ]);
     await recordFrontierFailure(db.pool, crawlId, url, "503, retry-after 3600s");
     expect(await countFrontier(db.pool, crawlId)).toMatchObject({
       pending: 1,
@@ -139,7 +152,7 @@ describe("crawl_frontier", () => {
   it("refuses a fetched row that still carries an error", async () => {
     const crawlId = await newCrawl();
     await addToFrontier(db.pool, crawlId, [
-      { urlNormalized: "https://403bplan.net/", inTruthSource: true },
+      { urlNormalized: "https://403bplan.net/", inTruthSource: true, postType: null },
     ]);
     await expect(
       db.pool.query(

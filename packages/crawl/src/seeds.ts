@@ -9,13 +9,23 @@ import { normalizeUrl, type SiteHosts } from "@link-graph/core";
 import { isInventory, type SiteRow } from "@link-graph/db";
 import { sampleCeilingProblem } from "./sample.js";
 
+/** One inventory URL and the CMS object the truth source named for it (step 5). */
+export interface SeedUrl {
+  readonly url: string;
+  /**
+   * A post type slug, a taxonomy slug, or `author`. `null` when no source named one —
+   * a flat `sitemap.xml` names nothing — and never read as content or non-content.
+   */
+  readonly postType: string | null;
+}
+
 export interface CrawlSeeds {
   /**
    * The truth source's inventory (step 5's `resolveTruthSource().urls`). These are the
    * pages whose absence from the link graph makes an orphan, so `in_truth_source` is
    * true for exactly these and false for everything the crawl discovers.
    */
-  readonly urls: readonly string[];
+  readonly urls: readonly SeedUrl[];
   /**
    * How large the inventory was, for the `crawls` row. Three counts because the two
    * sources disagree in both directions and the disagreement is itself a finding
@@ -24,6 +34,12 @@ export interface CrawlSeeds {
   readonly truthSourceUrls: number | null;
   readonly truthSourceRestUrls: number | null;
   readonly truthSourceSitemapUrls: number | null;
+  /**
+   * The site's taxonomy vocabulary, as this resolution found it (`crawls.taxonomies`).
+   * `analyse` reads it to turn a page's post type into PRD §4's Excluded decision, and
+   * it travels with the seeds because it is a fact about the same resolution.
+   */
+  readonly taxonomies: readonly string[];
 }
 
 /**
@@ -38,10 +54,10 @@ export interface CrawlSeeds {
 export function seedProblem(site: SiteRow, seeds: CrawlSeeds): string | null {
   const hosts: SiteHosts = { canonicalHost: site.canonicalHost, aliases: site.aliases };
   const seen = new Set<string>();
-  for (const [index, url] of seeds.urls.entries()) {
-    const problem = seedUrlProblem(url, index, hosts, seen);
+  for (const [index, seed] of seeds.urls.entries()) {
+    const problem = seedUrlProblem(seed.url, index, hosts, seen);
     if (problem !== null) return problem;
-    seen.add(url);
+    seen.add(seed.url);
   }
 
   const inventory = isInventory(site.truthSource);

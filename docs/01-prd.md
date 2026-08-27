@@ -250,6 +250,27 @@ artifacts (`bricks_template`, `gblocks_*`), taxonomy archives, author archives a
 `ignorePaths` matches into the Excluded class. Rules are per-site: taxonomy archives
 are 17% of tidewatermg.com's sitemap but 1% of integrity.com's.
 
+**Built 2026-08-26, and it splits in two rather than running here.** The truth source
+supplies the _provenance_ — which CMS object each URL came from — and `analyse` makes the
+_decision_, because Excluded is a class on a page row and no page row exists yet at
+resolution time. Where the provenance comes from: WP REST names the post type of every
+URL it enumerates, and a child sitemap's own filename names the object it lists
+(`category-sitemap.xml`, `author-sitemap.xml`, `wp-sitemap-posts-page-1.xml`). Step 5 was
+discarding the second, which is why `pages.post_type` was NULL for all 2,454 rows of the
+integrity.com crawl.
+
+**"Rules are per-site" is literal, and the site states them itself.** `/wp/v2/types` —
+the request the resolver already makes — declares the taxonomies registered for each post
+type, and that is the only thing in the estate that can tell `insights_category-sitemap.xml`
+(a taxonomy archive) from `insights-sitemap.xml` (a content post type). Measured
+2026-08-26 against the recorded responses: it names all five of integrity.com's taxonomy
+children and all 17 of tidewatermg.com's, and the two children it cannot name on
+tidewatermg.com are `author` and `bricks_template` — 15 content post types, 17 taxonomies,
+one author archive, one page-builder type, which is this section's own 15 and 18. A
+name that is both a post type and a taxonomy is treated as the post type, and an unknown
+type is treated as content: excluding too much deletes a real orphan silently, and §13
+puts that ahead of the phantom orphans §2 complains about.
+
 ---
 
 ## 5. Crawler
@@ -698,6 +719,27 @@ nofollow'>`** — verified on `/` and `/about-us/`, no `X-Robots-Tag`. Under §2
   findings a reader wants to see. **Step 4 is not implicated** — every reported page truly
   has zero inbound edges in the crawl — so the plan's "stop and fix step 4" instruction
   is itself the thing to correct.
+
+- **Settled 2026-08-26 — the second of those three decisions: taxonomy archives, author
+  archives and page-builder types are Excluded, and the machinery to say so is built.**
+  `pages.post_type` is populated from the truth source's provenance and carried on
+  `crawl_frontier` (migration `010`), `crawls.taxonomies` records the vocabulary the
+  crawl was seeded against, and `classifyPage` excludes a page whose post type is one of
+  that site's declared taxonomies, `author`, or one of the five page-builder types §4
+  names. `excluded` was kept rather than a sixth class: §2 defines Excluded by what it
+  _does_ — "counted and shown separately, never in the orphan list" — which is exactly
+  right for a page the CMS generated and nobody authored, and §4 already assigns these
+  three kinds to it by name. The cost is that `crawl_metrics.excluded` no longer
+  distinguishes "by intent" from "not content"; a breakdown is a reporting question and
+  belongs with the findings sink step 12/13 owes.
+
+  **This would reclassify all nine of the taxonomy archives integrity.com's 2026-08-25
+  run reported as orphans** — they are terms of `category`, `family_category`,
+  `insights_category` and `wealth_category`, all four of which that site declares — and
+  the 86 `bricks_template`, 164 taxonomy and 4 author URLs §2 measured on
+  tidewatermg.com. It touches neither of the other two decisions: the Playwright fetcher
+  landed separately, and **thank-you and campaign pages remain open**. The false-positive
+  rate is still unmeasured after this change; only a re-crawl settles it.
 
 - Are the ~23 sitemap-less, REST-less hosts that look like real sites in scope?
   (The other ~24 are planenroll funnels, rate calculators and APIs — presumed out.)

@@ -25,6 +25,14 @@ export interface RestPostType {
   readonly restBase: string;
   /** From `rest_namespace`; `wp/v2` on all four sites measured, but declared per type. */
   readonly namespace: string;
+  /**
+   * The taxonomies WordPress registers for this post type, from the `taxonomies` field
+   * of the same response. Measured 2026-08-26 on all four recorded type maps, and it is
+   * the only thing in the estate that can tell `insights_category-sitemap.xml` (a
+   * taxonomy archive) from `insights-sitemap.xml` (a content post type) — see
+   * `declaredTaxonomies`.
+   */
+  readonly taxonomies: readonly string[];
 }
 
 /**
@@ -80,12 +88,41 @@ export function parsePostTypes(json: unknown): RestPostType[] {
     }
     const slug = typeof type["slug"] === "string" ? type["slug"] : key;
     const namespace = type["rest_namespace"];
+    const taxonomies = type["taxonomies"];
     return {
       slug,
       restBase,
       namespace: typeof namespace === "string" && namespace !== "" ? namespace : "wp/v2",
+      // Filtered rather than validated: a type map missing the field, or carrying a
+      // non-string in it, costs a name from the vocabulary — which under-excludes, and
+      // under-excluding leaves a finding in the report rather than deleting one.
+      taxonomies: Array.isArray(taxonomies)
+        ? taxonomies.filter((name): name is string => typeof name === "string")
+        : [],
     };
   });
+}
+
+/**
+ * Every taxonomy this site registers, sorted, and never a name that is also a post type.
+ *
+ * **Why this decides the Excluded class, and a list of names could not.** PRD §4 wants
+ * taxonomy archives Excluded and says the rules are per-site — measured, they are:
+ * integrity.com declares 8, of which `insights_category`, `wealth_category`,
+ * `family_category` and `teammember_level` are its own; tidewatermg.com declares 23, and
+ * the two sites share nothing beyond WordPress's own four. No closed list written in
+ * this repository could name either set. This asks the site.
+ *
+ * **The direction of the guard.** A name that is both a post type and a taxonomy would
+ * exclude real content, so the post types win: excluding too much hides orphans, which
+ * is the failure PRD §2 exists to complain about, in reverse. No estate site has the
+ * collision — checked on all four recorded type maps — so this only ever removes a
+ * failure mode, never a name.
+ */
+export function declaredTaxonomies(types: readonly RestPostType[]): string[] {
+  const postTypes = new Set(types.map((type) => type.slug));
+  const names = new Set(types.flatMap((type) => type.taxonomies));
+  return [...names].filter((name) => !postTypes.has(name)).sort();
 }
 
 /** Why a post type will not be enumerated, or `null` if it will be. */

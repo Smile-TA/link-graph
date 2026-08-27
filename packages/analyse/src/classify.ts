@@ -40,6 +40,13 @@ export interface PageFacts {
   readonly redirectTo: string | null;
   readonly inTruthSource: boolean;
   /**
+   * The CMS object this URL came from — a post type slug, a taxonomy slug, or `author`
+   * (step 5's provenance, carried through the frontier). **`null` is "unknown", and is
+   * never read as content or as non-content**: a flat `sitemap.xml` names nothing, and
+   * a discovered URL inherits nothing.
+   */
+  readonly postType: string | null;
+  /**
    * Whether this page is where the crawl's reachability is measured from — the site's
    * homepage. A named fact rather than `depth === 0`, so that a future crawl seeded from
    * a sitemap rather than the homepage cannot silently change what the rule below means.
@@ -59,6 +66,19 @@ export interface SiteRules {
   /** `sample` = crawled to a ceiling by policy, so the site was never covered whole. */
   readonly crawlScope: CrawlScope;
   readonly ignorePaths: readonly string[];
+  /**
+   * Every taxonomy this site registers, as the crawl's own truth resolution found it
+   * (`crawls.taxonomies`, `010`). A page whose post type is one of these is a taxonomy
+   * archive, which PRD §4 puts in the Excluded class.
+   *
+   * **Per-site, because the vocabulary is.** Measured on the recorded `/wp/v2/types`
+   * responses: integrity.com declares 8 taxonomies and tidewatermg.com 23, and beyond
+   * WordPress's own `category`, `post_tag`, `nav_menu` and `wp_pattern_category` the
+   * two sets are disjoint — `insights_category` and `wealth_category` against
+   * `team-department` and `university-series-taxonomy`. No list written here could know
+   * either. Empty means no name is known, and excludes nothing.
+   */
+  readonly taxonomies: readonly string[];
 }
 
 /**
@@ -106,6 +126,70 @@ function isIgnored(path: string, ignorePaths: readonly string[]): boolean {
 }
 
 /**
+ * The non-content types whose names a plugin or WordPress itself fixes across every
+ * site that has them, each with the measurement that put it here.
+ *
+ * **A WordPress post type is an open set, and an unknown one is treated as content.**
+ * That is the direction that cannot silently delete a finding: excluding too much hides
+ * real orphans, while including too much leaves a page in the report where a reader can
+ * see it and say so. PRD §2's complaint is about phantom orphans, and the fix must not
+ * be a rule that quietly removes real ones.
+ *
+ * Taxonomy archives are deliberately absent: their names are per-site and come from
+ * `SiteRules.taxonomies`.
+ *
+ * A `Set` and not `postType in {...}`: `in` walks the prototype chain, and
+ * `constructor`, `toString` and `hasOwnProperty` are all valid WordPress slugs — so the
+ * object form would exclude a page called `/toString/` and delete a real orphan with no
+ * trace, which is exactly the direction the paragraph above forbids. Not a
+ * `satisfies Record<…>` either, unlike `report.ts` and `fetcher-for-mode.ts`: their key
+ * type comes from another module, so the check catches a vocabulary that moved. There
+ * is no such vocabulary here — a union declared beside this list would only check the
+ * list against itself.
+ */
+const NOT_CONTENT = new Set([
+  /**
+   * Author archives (PRD §2, §4). The name is Yoast's — `author-sitemap.xml` on
+   * tidewatermg.com, whose 4 author archives §2 counts — and WP core's `users` child is
+   * normalized to it in `sitemapChild`. `author` is one of WordPress's reserved terms —
+   * advisory rather than enforced by `register_post_type`, so this is not a name a site
+   * *cannot* use, only one no estate site does: checked on all four recorded type maps.
+   */
+  "author",
+  /**
+   * Bricks Builder's templates. 86 of tidewatermg.com's sitemap URLs (PRD §2), and the
+   * one child sitemap on that site with no REST post type at all (PRD §4) — so nothing
+   * but this name can classify them.
+   */
+  "bricks_template",
+  /**
+   * The four GenerateBlocks builder types PRD §4 names, declared by tidewatermg.com's
+   * `/wp/v2/types` and absent from its sitemap. REST enumerates them, so their URLs
+   * reach the inventory carrying these slugs — which is why they are classified here
+   * rather than skipped in `packages/truth`, where they would become invisible.
+   */
+  "gblocks_condition",
+  "gblocks_overlay",
+  "gblocks_styles",
+  "gblocks_templates",
+]);
+
+/**
+ * Whether this page is not content at all: a taxonomy archive, an author archive or a
+ * page-builder artifact (PRD §4).
+ *
+ * Measured twice, which is why it is phase-1 work: ~10% of tidewatermg.com's sitemap is
+ * one of the three, and integrity.com's live crawl of 2026-08-25 reported nine taxonomy
+ * archives among its 538 orphans.
+ */
+function isNotContent(postType: string | null, site: SiteRules): boolean {
+  // Unknown is neither. A page nobody named is left in the orphan question rather than
+  // taken out of it (PRD §13: the false positive is visible, the false negative is not).
+  if (postType === null) return false;
+  return NOT_CONTENT.has(postType) || site.taxonomies.includes(postType);
+}
+
+/**
  * PRD §2's Excluded: "not an orphan by intent". `noindex`, a canonical pointing
  * elsewhere, a redirect, an `ignorePaths` match — and a status that is not a success,
  * because PRD §2 requires an orphan to be *published*, and a sitemap URL that 404s is a
@@ -114,6 +198,14 @@ function isIgnored(path: string, ignorePaths: readonly string[]): boolean {
  */
 function isExcluded(page: PageFacts, site: SiteRules): boolean {
   return (
+    // PRD §4 puts non-content types in this class by name, and §2 calls the detection
+    // phase-1 work. The class is a stretch of §2's wording — a taxonomy archive is not
+    // noindex, canonical elsewhere, redirected or ignore-pathed — but §2's Excluded is
+    // defined by what it *does*: "counted and shown separately, never in the orphan
+    // list", which is exactly right for a page the CMS generated and nobody authored.
+    // A separate class value would need a migration, a metrics column and a report line
+    // to express a difference no reader would act on differently.
+    isNotContent(page.postType, site) ||
     !page.indexable ||
     (page.canonicalTo !== null && page.canonicalTo !== page.urlNormalized) ||
     page.redirectTo !== null ||
@@ -127,7 +219,8 @@ function isExcluded(page: PageFacts, site: SiteRules): boolean {
  * rather than folded into a lookup:
  *
  * 1. **Excluded** first, because it means "do not ask the orphan question here", and
- *    that has to outrank every answer to it.
+ *    that has to outrank every answer to it. That now includes PRD §4's non-content
+ *    types — a taxonomy archive with inbound links is still not content.
  * 2. **The crawl root** is never an orphan. Measured on 403bplan.net: the homepage's
  *    only inbound edges are 13 header logo links with an empty anchor, so the
  *    `(target, anchor)` pair is on 100% of pages, every inbound edge is boilerplate, and

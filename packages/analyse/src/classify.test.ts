@@ -16,6 +16,7 @@ const page = (overrides: Partial<PageFacts> = {}): PageFacts => ({
   inTruthSource: true,
   isCrawlRoot: false,
   inboundTotal: 1,
+  postType: "page",
   ...overrides,
 });
 
@@ -23,6 +24,7 @@ const sitemapSite: SiteRules = {
   truthSource: "sitemap",
   crawlScope: "full",
   ignorePaths: [],
+  taxonomies: [],
 };
 
 /** The same site crawled to a ceiling instead of exhaustively (PRD §15). */
@@ -212,5 +214,132 @@ describe("classifyPage", () => {
     it("leaves a full crawl of the same site answering the orphan question", () => {
       expect(classifyPage(page({ inboundTotal: 0 }), sitemapSite)).toBe("orphan");
     });
+  });
+});
+
+/**
+ * PRD §2's non-content types — "Excluded-class detection is phase 1, not later".
+ *
+ * Measured twice. ~10% of tidewatermg.com's sitemap is non-content (86
+ * `bricks_template`, 164 taxonomy archives, 4 author archives), and the live
+ * integrity.com run of 2026-08-25 reported nine taxonomy archives among its 538
+ * orphans. Unclassified, those are phantom orphans in front of a reader.
+ */
+describe("non-content types are excluded (PRD §2, §4)", () => {
+  /** integrity.com's own vocabulary, read from its `/wp/v2/types` in packages/truth. */
+  const integrity: SiteRules = {
+    ...sitemapSite,
+    taxonomies: [
+      "category",
+      "family_category",
+      "insights_category",
+      "nav_menu",
+      "post_tag",
+      "teammember_level",
+      "wealth_category",
+      "wp_pattern_category",
+    ],
+  };
+  const orphaned = { inboundTotal: 0 } as const;
+
+  it("excludes a taxonomy archive the site itself declares a taxonomy", () => {
+    expect(
+      classifyPage(page({ ...orphaned, postType: "insights_category" }), integrity),
+    ).toBe("excluded");
+  });
+
+  /**
+   * The nine taxonomy archives the live crawl called orphans. Each is a term of the
+   * taxonomy its child sitemap is named after, so the provenance is that name.
+   */
+  it("reclassifies all nine of integrity.com's reported taxonomy orphans", () => {
+    const reported = [
+      ["/category/featured/", "category"],
+      ["/category/insights/", "category"],
+      ["/category/partner-news/", "category"],
+      ["/family_category/featured/", "family_category"],
+      ["/insights_category/featured/", "insights_category"],
+      ["/insights_category/insurance-and-marketing/", "insights_category"],
+      ["/insights_category/insurance-marketing-and-technology/", "insights_category"],
+      ["/wealth_category/careers/", "wealth_category"],
+      ["/wealth_category/featured/", "wealth_category"],
+    ] as const;
+    const classes = reported.map(([path, postType]) =>
+      classifyPage(
+        page({
+          ...orphaned,
+          path,
+          urlNormalized: `https://integrity.com${path}`,
+          canonicalTo: `https://integrity.com${path}`,
+          postType,
+        }),
+        integrity,
+      ),
+    );
+    // Nine, written out rather than derived from `reported`: an expectation computed
+    // from the input cannot disagree with it about how many rows were checked.
+    expect(reported).toHaveLength(9);
+    expect(classes).toEqual(Array.from({ length: 9 }, () => "excluded"));
+  });
+
+  /**
+   * The safe direction, and the whole reason the vocabulary is per-site rather than a
+   * list of names. `insights` is a content post type on integrity.com whose taxonomy is
+   * `insights_category`; a rule that read either as non-content would delete real
+   * findings, which is the failure PRD §2 complains about in reverse.
+   */
+  it("does not exclude a content post type of the same family", () => {
+    expect(classifyPage(page({ ...orphaned, postType: "insights" }), integrity)).toBe(
+      "orphan",
+    );
+  });
+
+  it("does not exclude a taxonomy name this site never declared", () => {
+    // `team-department` is a taxonomy on tidewatermg.com and nothing on integrity.com.
+    expect(
+      classifyPage(page({ ...orphaned, postType: "team-department" }), integrity),
+    ).toBe("orphan");
+  });
+
+  /**
+   * NULL is "we do not know", which is neither content nor non-content — and the only
+   * safe reading of the unknown is the one that keeps the page in the orphan list.
+   * A flat `sitemap.xml` with no child sitemaps gives every URL this.
+   */
+  it("does not exclude a page whose post type is unknown", () => {
+    expect(classifyPage(page({ ...orphaned, postType: null }), integrity)).toBe("orphan");
+  });
+
+  /**
+   * Gate 2: the first version tested the list with `postType in NOT_CONTENT`, and `in`
+   * walks the prototype chain — so a page whose post type is `constructor`, `toString`
+   * or `hasOwnProperty` (all valid WordPress slugs) came out excluded and a real orphan
+   * disappeared from the report with no trace. The list is a Set now; this pins it.
+   */
+  it("does not exclude a post type that is only a property of Object.prototype", () => {
+    for (const postType of ["constructor", "toString", "hasOwnProperty", "valueOf"]) {
+      expect(classifyPage(page({ ...orphaned, postType }), integrity)).toBe("orphan");
+    }
+  });
+
+  it("excludes author archives and the page-builder types PRD §4 names", () => {
+    for (const postType of [
+      "author",
+      "bricks_template",
+      "gblocks_condition",
+      "gblocks_overlay",
+      "gblocks_styles",
+      "gblocks_templates",
+    ]) {
+      expect(classifyPage(page({ ...orphaned, postType }), sitemapSite)).toBe("excluded");
+    }
+  });
+
+  /**
+   * Excluded means "do not ask the orphan question here", so it has to outrank the
+   * answer to it — a taxonomy archive with inbound links is still not content.
+   */
+  it("excludes a non-content page that is linked", () => {
+    expect(classifyPage(page({ postType: "category" }), integrity)).toBe("excluded");
   });
 });

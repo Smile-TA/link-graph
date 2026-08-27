@@ -18,11 +18,18 @@ const site = (overrides: Partial<SiteRow> = {}): SiteRow => ({
   ...overrides,
 });
 
+/**
+ * Inventory URLs as seeds. The post type is `null` throughout: `seedProblem` reads only
+ * the URL, so a value here would be one nothing in this file can observe.
+ */
+const urls = (...list: string[]) => list.map((url) => ({ url, postType: null }));
+
 const seeds = (overrides: Partial<CrawlSeeds> = {}): CrawlSeeds => ({
-  urls: ["https://403bplan.net/", "https://403bplan.net/contact-us/"],
+  urls: urls("https://403bplan.net/", "https://403bplan.net/contact-us/"),
   truthSourceUrls: 2,
   truthSourceRestUrls: null,
   truthSourceSitemapUrls: 2,
+  taxonomies: [],
   ...overrides,
 });
 
@@ -37,7 +44,7 @@ describe("seedProblem", () => {
     // downstream can undo (PRD §13).
     const problem = seedProblem(
       site(),
-      seeds({ urls: ["https://403bplan.net/", "https://403bplan.net/contact-us"] }),
+      seeds({ urls: urls("https://403bplan.net/", "https://403bplan.net/contact-us") }),
     );
     expect(problem).toMatch(/not normalized/i);
     expect(problem).toContain("https://403bplan.net/contact-us/");
@@ -46,7 +53,7 @@ describe("seedProblem", () => {
   it("refuses a seed on another host", () => {
     const problem = seedProblem(
       site(),
-      seeds({ urls: ["https://403bplan.net/", "https://integrity.com/"] }),
+      seeds({ urls: urls("https://403bplan.net/", "https://integrity.com/") }),
     );
     expect(problem).toMatch(/not on this site/i);
   });
@@ -56,7 +63,7 @@ describe("seedProblem", () => {
     // 2 and holds 1 distinct URL overstates what the crawl is measured against.
     const problem = seedProblem(
       site(),
-      seeds({ urls: ["https://403bplan.net/", "https://403bplan.net/"] }),
+      seeds({ urls: urls("https://403bplan.net/", "https://403bplan.net/") }),
     );
     expect(problem).toMatch(/duplicate/i);
   });

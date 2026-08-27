@@ -110,6 +110,11 @@ export async function analyse(
     truthSource: site.truthSource,
     crawlScope: site.crawlScope,
     ignorePaths: site.ignorePaths,
+    // From the crawl, not the site: this is the vocabulary the crawl's own truth
+    // resolution found, and it is what the post types beside it were named against
+    // (010). Re-analysing an old crawl against a vocabulary that has since moved would
+    // reclassify pages nobody re-crawled.
+    taxonomies: crawl.taxonomies,
   };
   // What the orphan count is going to be, decided once and used twice: the gate below
   // and the metrics row at the end must not disagree about whether this crawl can
