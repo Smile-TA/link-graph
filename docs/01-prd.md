@@ -673,7 +673,17 @@ nofollow'>`** — verified on `/` and `/about-us/`, no `X-Robots-Tag`. Under §2
   the question was asked of no page at all), and the two dead staging hosts are the
   configured-but-not-serving class that step 9's coverage-drift report exists to find.
 
-- **Step 7's false-positive gate failed on 2026-08-25 and the remedy needs deciding.**
+- **Corrected 2026-08-26: step 7's false-positive rate is ~5%, not ~89%.** Measured with
+  the browser fetcher against the live pages, the 480 orphans attributed to AJAX-rendered
+  listings are **real**: `/about-us/our-partners/` renders 73 hrefs with one `/partner/`
+  link and no `onclick` handlers, `/inspire/` renders 3 `/inspire/<slug>/` links of which
+  two are `page` and `feed`, and the archive's own `?sf_data=results` endpoint returns
+  91 KB holding one item slug. No crawlable inbound link to those pages exists in any
+  response. What remains arguable is ~27 pages across three _classification_ questions —
+  9 taxonomy archives, ~10 form thank-you pages, ~8 campaign landing pages — not the
+  graph maths. The original entry follows for the record.
+
+- ~~**Step 7's false-positive gate failed on 2026-08-25 and the remedy needs deciding.**~~
   A full prod crawl of integrity.com (41.2 min, 2,454 pages, 127,845 links, no 503)
   reported **538 orphans, ~89% false**. Causes, in order of size: AJAX-rendered listings
   (480 — see §5), then §2's still-unbuilt Excluded classes for taxonomy archives (~10),

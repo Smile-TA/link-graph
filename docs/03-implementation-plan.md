@@ -586,7 +586,7 @@ times. The 403bplan fixture manifest is a third copy of the 13-row URL→file ta
 
 ---
 
-## Step 7 — CLI: PRD phase 1 complete — S — **built; verification FAILED, see below**
+## Step 7 — CLI: PRD phase 1 complete — S — **built; verification corrected 2026-08-26, see below**
 
 `link-graph crawl <site-id>` → truth source → crawl → analyse → print the orphan
 table. One command, one site, no queue, no UI.
@@ -632,7 +632,42 @@ smaller view. It is printed as a finding under a heading naming the consequence,
 integration test pins today's behaviour so that changing it is a decision rather than an
 accident.
 
-### The live verification, 2026-08-25: **the gate fails, and not where the plan expected**
+### Correction, 2026-08-26: **the verification below was wrong, and the tool was right**
+
+The section that follows concluded ~89% of the 538 orphans were false, because the two
+big buckets sit behind `admin-ajax` listings. **That inference was never tested, and it
+does not survive testing.** Measured with the Playwright fetcher built the next day, on
+the live pages:
+
+- `/about-us/our-partners/` rendered in Chromium, stylesheets allowed, scrolled twice,
+  6s of settling: **73 hrefs, exactly one containing `/partner/`** — the archive root.
+  Zero `onclick` handlers. Partners open in a `modal team-modal partner` container.
+- `/inspire/` and `/inspire/?sf_paged=16` render **identically**, and both yield **3**
+  `/inspire/<slug>/` links, two of which are `page` and `feed` rather than items.
+- The archive's **own declared results endpoint**, `?sf_data=results`, returns 91 KB
+  containing **one** distinct item slug.
+
+So the item links do not exist in the served HTML, in the rendered DOM, or in the
+endpoint the page itself declares. **480 published, indexable, sitemapped pages have no
+crawlable inbound link from anywhere on the site** — which is precisely what PRD §2
+defines as a true orphan, and precisely what a search engine would conclude.
+
+**The real false-positive rate is therefore about 5%, not 89%**: 9 taxonomy archives
+(fixed by the Excluded-class work), ~10 form thank-you pages and ~8 campaign landing
+pages — ~27 of 538 — and every one of those is a _classification_ question §15 already
+tracks, not a wrong answer about the graph. **Step 7's gate looks like a pass**, pending
+a decision on those three classes.
+
+**How the error was made, since that is the reusable part.** The reasoning went: the
+listing page serves few links → `admin-ajax` is present → therefore the links are
+AJAX-rendered → therefore the orphans are false. Every step after the first was an
+inference, and the engineering guide's own rule — verify an assumption about a server
+before encoding it — was skipped precisely because the conclusion felt obvious. The
+Playwright fetcher was then built to fix a problem that did not exist; it is still PRD
+§5's designed capability and it is what disproved the premise, but it is **not** the
+remedy for these 480 and nothing should describe it as such.
+
+### The live verification, 2026-08-25 — **superseded by the correction above**
 
 Ran `link-graph crawl integrity-com` against prod. **41.2 minutes, 2,454 pages, 127,845
 links, `was_throttled = false`** — 2,454 requests at 1 req/s drew no 503, which is the
