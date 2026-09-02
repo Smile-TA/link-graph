@@ -586,7 +586,7 @@ times. The 403bplan fixture manifest is a third copy of the 13-row URL→file ta
 
 ---
 
-## Step 7 — CLI: PRD phase 1 complete — S — **built; verification corrected 2026-08-26, see below**
+## Step 7 — CLI: PRD phase 1 complete — S — **done; gate passed 2026-09-02**
 
 `link-graph crawl <site-id>` → truth source → crawl → analyse → print the orphan
 table. One command, one site, no queue, no UI.
@@ -598,7 +598,8 @@ before anything is built on top. If FP rate is not near zero, stop and fix step 
 
 **Done when** a real orphan list for a real site survives manual review.
 
-**Half done, and deliberately stopped there.** 334 unit + 113 integration tests
+**Half done as of 2026-08-24, and deliberately stopped there — the other half closed
+2026-09-02, see "The gate" below.** 334 unit + 113 integration tests
 (291/102 before), lint and Prettier clean. `packages/cli` gives
 `link-graph crawl <site-id>`: registry row → `resolveTruthSource` → `crawl` → `analyse`
 → the orphan table, with `runCrawlCommand(pool, siteId, progress, deps)` and
@@ -621,7 +622,7 @@ contract makes a live crawl a hard stop for a subagent. The step stays open unti
 orphan list for a real site survives manual review — which is a decision about which site
 to crawl and whose time reviews it.
 
-**Blocked on that same decision, and pre-scoped:** `--boilerplate-threshold` and
+**Was blocked on that same decision, and pre-scoped (unblocked 2026-09-02):** `--boilerplate-threshold` and
 `--min-coverage` flags. Both `analyse` options name step 7 as their calibration point and
 neither can be calibrated without the live crawl, so the flags are ten lines at
 `run.ts:86` the moment the run is green-lit.
@@ -631,6 +632,44 @@ resolution that loses one of its two sources still exits 0 and differences again
 smaller view. It is printed as a finding under a heading naming the consequence, and an
 integration test pins today's behaviour so that changing it is a decision rather than an
 accident.
+
+### The gate, closed 2026-09-02 — **1.7% known false positives**
+
+The last of the three blocking decisions landed (PRD §15): thank-you and campaign pages
+are **findings**, not Excluded. That resolves the whole 538 into classes:
+
+| Bucket                         | Count | Verdict                                      |
+| ------------------------------ | ----: | -------------------------------------------- |
+| `/partner/` archive            |   270 | true orphans, browser-verified               |
+| `/inspire/` archive            |   210 | true orphans, browser-verified               |
+| taxonomy archives              |     9 | **false** — Excluded by migration `010`      |
+| form thank-you pages           |     8 | findings, correct as reported                |
+| campaign / event landing pages |     8 | findings, correct as reported                |
+| everything else                |    33 | findings — the leftovers the tool exists for |
+
+**Known false positives: 9 of 538, 1.7%.** PRD §13's threshold is "near zero", so the
+gate passes, and the plan's "if FP rate is not near zero, stop and fix step 4"
+instruction never fires — which is correct, because step 4 was right all along.
+
+**Two limits on that number, stated rather than rounded away.** The 480 were verified by
+probing **5** pages of two homogeneous archive templates, so their reality is an inference
+from a verified mechanism, not 480 independent measurements. And the 33 leftovers were
+sorted by reading slugs — the same inference PRD §2 just declined to encode as an Excluded
+rule — so they are counted as findings because that is the definition of an unreviewed
+finding, not because each was confirmed actionable. The missing measurement in both cases
+is a reader's judgement, and step 7.6 is where it goes.
+
+**Still unproven end to end:** migration `010` is not applied to the local database and
+`post_type` is NULL on every row of the 2026-08-25 crawl, so re-running `analyse` over it
+would reclassify nothing. The nine archives are false positives by arithmetic; the chain
+from `/wp/v2/types` through `crawl_frontier.post_type` into `pages` has only run against
+fixtures. Closing that needs a re-crawl or a truth-source-only backfill, and it is a
+verification debt on step 6's write path, not a reason to hold step 7 open.
+
+**The two pre-scoped flags are now unblocked**: `--boilerplate-threshold` and
+`--min-coverage`, ten lines at `run.ts:86`.
+
+---
 
 ### Correction, 2026-08-26: **the verification below was wrong, and the tool was right**
 
@@ -738,6 +777,45 @@ deferred to step 10.
 
 ---
 
+## Step 7.6 — `review`: the findings sink — S
+
+**Why here.** Step 7's gate produced 529 correct findings on one site, and 16 of them are
+correct-and-intentional. A reader who cannot say "I have judged this one" reads the same
+list every week and stops reading it — which is PRD §2's opening sentence ("an orphan
+report that is 30% noise gets ignored within two weeks") arriving through a different
+door. It is the first thing the tool needs that step 7's own output proved it needs.
+
+|            |                                                         |
+| ---------- | ------------------------------------------------------- |
+| Package    | `packages/review` + migration `011_finding_reviews.sql` |
+| Depends on | steps 3, 4, 7                                           |
+| Seam       | `reviewsFor(pool, siteId, kind) → Map<subject, Review>` |
+| Spec       | PRD §7.1 — the five rules, all five testable            |
+| Tests      | unit for digest + bucketing, integration for the table  |
+
+**Demo.** `link-graph note integrity-com orphan /agents/thank-you/ --intentional -m
+"reached after form submit"`, then `link-graph report integrity-com` shows the orphan
+table split **new / changed since review / reviewed**, all three counts printed, the total
+unchanged at 538.
+
+**The tests that matter are the §1 ones**, and they are the reason this is a step rather
+than a UI detail:
+
+- reviewing every orphan on a site leaves `crawl_metrics.orphans` **byte-identical** and
+  makes the report read "538 orphans, 538 reviewed" — never "no orphans", never 0
+- a review survives the crawl its finding was recorded in being deleted, because it keys
+  on `(site_id, kind, subject)`
+- an `acknowledged` broken link whose blast radius moves 18 → 40 re-surfaces as changed;
+  the same link re-crawled unchanged does not
+- `state` and `kind` have no `fixed` value and the SQL `CHECK` refuses one
+
+**Left out on purpose:** no `fixed` state (PRD §7.1 rule 4), no per-user auth —
+`reviewed_by` is `--by` or `$USER`, and step 11 can tighten it — and no
+disappeared-then-returned detection, which needs step 13's crawl history and is recorded
+as §7.1's open gap.
+
+---
+
 ## Step 8 — `linkcheck`: lychee — M
 
 Vendored static binary as a subprocess over external URLs due for a check (PRD §6.1).
@@ -784,13 +862,13 @@ flag on the existing crawl path.
 
 ## Decisions this plan forces, and when
 
-| Open item (PRD §15)                                   | Decided at | By what                                          |
-| ----------------------------------------------------- | ---------- | ------------------------------------------------ |
-| Boilerplate threshold N                               | step 4     | fixture + two real crawls at 40–80%              |
-| Orphan false-positive rate acceptable?                | step 7     | manual review of one real site                   |
-| Are the ~23 sitemap-less real-looking hosts in scope? | step 5     | what `truth_source = 'none'` actually costs them |
-| Safe sustained crawl rate                             | step 6     | crawl telemetry, not more probing                |
-| 12-crawl retention                                    | step 13    | measured row counts by then                      |
+| Open item (PRD §15)                                      | Decided at | By what                                          |
+| -------------------------------------------------------- | ---------- | ------------------------------------------------ |
+| Boilerplate threshold N                                  | step 4     | fixture + two real crawls at 40–80%              |
+| ~~Orphan false-positive rate acceptable?~~ **yes, 1.7%** | step 7     | settled 2026-09-02 — see step 7's gate           |
+| Are the ~23 sitemap-less real-looking hosts in scope?    | step 5     | what `truth_source = 'none'` actually costs them |
+| Safe sustained crawl rate                                | step 6     | crawl telemetry, not more probing                |
+| 12-crawl retention                                       | step 13    | measured row counts by then                      |
 
 ## Ordering rules
 

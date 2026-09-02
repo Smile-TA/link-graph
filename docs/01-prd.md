@@ -84,6 +84,7 @@ that is 30% noise gets ignored within two weeks.
 | **Boilerplate edge**  | A link whose (target, anchor) pair appears on more than N% of crawled pages. Statistical, not structural — this also catches footer widgets, breadcrumbs and related-post modules that a nav-menu-based definition would miss. |
 | **Contextual edge**   | Any edge that is not boilerplate.                                                                                                                                                                                              |
 | **Blast radius**      | For a broken link: the number of distinct pages linking to it.                                                                                                                                                                 |
+| **Reviewed finding**  | A finding a human has already judged, with a note. Still counted, no longer ranked as new (§7.1). Not a class — a page's class is measured, a review is an opinion about it.                                                   |
 
 **Decision 2026-08-20: the soft-orphan class is dropped.** A page with inbound links is
 `linked`, however those links are styled or wherever they sit. Two independent
@@ -140,6 +141,26 @@ orphan puts false positives in front of a reader while the crawl total honestly 
 "unknown". One inbound edge still proves `linked` — positive evidence survives sampling;
 proving _absence_ does not. A sampled page with no inbound edge is therefore
 `undetectable`, and the reason it is unknown lives once, on the crawl.
+
+**Settled 2026-09-02 — the third of step 7's decisions: thank-you and campaign pages
+are findings, not Excluded.** Counted exactly on integrity.com's 2026-08-25 crawl: **8**
+form thank-you pages (`/agents/thank-you/`, `/preneed/thank-you/`, three under
+`/wealth/`, three under the `lifecenter*` and `medicarecenteragents` funnels) and **8**
+campaign or event landing pages (`/nationaldogday/`, `/springtraining/`,
+`/valero-open-giveaway/`, `/2025gametime/`, `/fallfestshowcase/`, `/friendshipday/`,
+`/petmascotchallenge/`, `/postseason-game-plan/`). Both sets are genuinely unlinked and
+a reader wants to know how many there are, so neither earns an Excluded rule.
+
+The reason to resist an Excluded rule here is that it would be a rule about **intent**,
+inferred from a URL slug, and the estate gives no reliable signal for it: `/preneed/` is
+a real page and `/preneed/thank-you/` is a funnel step, distinguished only by a
+convention nobody enforces. Excluded's existing four triggers are all things the page
+itself declares — `noindex`, a canonical, a redirect, a configured `ignorePaths`.
+Guessing from slugs would put the noisiest possible rule in the one class that is allowed
+to hide pages from the orphan list.
+
+So they stay findings, and what they actually need is a way to be judged **once**. That
+is §7.1.
 
 Excluded-class detection is **phase 1, not later**. Measured evidence: ~10% of
 tidewatermg.com's sitemap is non-content (86 `bricks_template`, 164 taxonomy
@@ -507,6 +528,58 @@ rows per full estate crawl; ~18M rows retained. Comfortable for one Postgres ins
 
 ---
 
+### 7.1 Review state
+
+A finding a human has already judged has to stop competing for attention without
+disappearing from the count. §2's thank-you and campaign pages are the case that forces
+it: 16 of integrity.com's 538 orphans are **correct** findings that a reader decides once
+and should not see ranked as new every week.
+
+```
+finding_reviews  id, site_id, kind, subject, state, note, evidence_digest,
+                 reviewed_by, reviewed_at      -- UNIQUE (site_id, kind, subject)
+```
+
+`kind` and `state` are vocabularies and get the estate's usual treatment — a TS const
+array, a `satisfies Record<…>` exhaustiveness check, and a matching SQL `CHECK`. Phase 1
+needs two kinds, `orphan` and `broken_internal_link`.
+
+Five rules. The first is the one that keeps the tool honest.
+
+1. **A review never changes a measured number.** `crawl_metrics` and `pages.class` are
+   written by `analyse` from the graph, and nothing about a review touches them; review
+   state joins at read time. A report where every orphan has been reviewed must read
+   "538 orphans, 538 reviewed" and never "no orphans" — §1's rule that a suppressed
+   finding must not be indistinguishable from an absent one. It also means a review
+   written today does not retroactively edit what a crawl recorded last month.
+2. **Identity is `(site_id, kind, subject)`, never a crawl-scoped row id.** `pages` and
+   `links` rows belong to one crawl and are rolled up after twelve of them (§7), so a
+   note keyed on one would evaporate on schedule. `subject` is the `url_normalized` the
+   finding is _about_: the orphaned page, or a broken link's **target** — not its blast
+   radius, which is a set of pages that changes crawl to crawl.
+3. **Two states, both meaning "do not rank this as new", differing in what they claim.**
+   `intentional` — unlinked by design, not a defect (a thank-you page). `acknowledged` —
+   a real defect, seen, not fixed yet (`/integrityconnect-ip-old/`). Collapsing them into
+   one "dismissed" would throw away the only number a reader gets out of the exercise:
+   how much of the backlog is deliberate versus outstanding.
+4. **There is no `fixed` state.** A fixed orphan gains an inbound link, and the next
+   crawl stops reporting it. A hand-written "fixed" would let a stale human claim outrank
+   a live measurement, which is §1 pointing the wrong way.
+5. **Changed evidence re-surfaces the finding.** The review stores a digest of what was
+   true when it was written; when current evidence differs, the finding reports as
+   `changed since review` and ranks with the new ones. For an orphan the digest is thin
+   (class, post type, status code); for a broken link it carries the status and blast
+   radius, so an acknowledged 404 linked from 18 pages does not stay quiet once it is
+   linked from 40.
+
+**One gap, left open on purpose until step 13.** A finding that disappears and later
+returns silently reactivates its old review, because telling that apart from "never went
+away" needs crawl history the phase-1 read path does not consult. Until then every review
+prints its age next to the finding, so a two-year-old acknowledgement is visible rather
+than invisible.
+
+---
+
 ## 8. Architecture
 
 Docker Compose on a single VM.
@@ -559,7 +632,9 @@ degrade into hairballs past a few hundred nodes, and websites are the worst case
 because global nav makes nearly every page link to nearly every other. Primary views:
 
 1. **Sorted tables** — orphans, broken links by blast radius. The
-   deliverable.
+   deliverable. Every such table is split three ways by §7.1 review state — new,
+   changed since review, reviewed — with all three counts always shown, and is where a
+   note is written.
 2. **Treemap / icicle** of URL hierarchy, coloured by inbound count or orphan status.
    "Site shape at a glance", scales to thousands.
 3. **Section→section matrix** — aggregate link counts at a readable altitude.
@@ -738,8 +813,36 @@ nofollow'>`** — verified on `/` and `/about-us/`, no `X-Robots-Tag`. Under §2
   `insights_category` and `wealth_category`, all four of which that site declares — and
   the 86 `bricks_template`, 164 taxonomy and 4 author URLs §2 measured on
   tidewatermg.com. It touches neither of the other two decisions: the Playwright fetcher
-  landed separately, and **thank-you and campaign pages remain open**. The false-positive
-  rate is still unmeasured after this change; only a re-crawl settles it.
+  landed separately, and thank-you and campaign pages were settled on 2026-09-02, below.
+  The false-positive rate is still unmeasured _end to end_ after this change: migration
+  `010` is not applied to the local database and `post_type` is NULL on all 2,454 rows of
+  the 2026-08-25 crawl, so re-running `analyse` over that crawl cannot reclassify the nine
+  archives. The arithmetic is settled; the chain from `/wp/v2/types` through
+  `crawl_frontier.post_type` into `pages` has only ever run against fixtures.
+
+- **Settled 2026-09-02 — the third and last of step 7's decisions: thank-you and campaign
+  pages are findings, not Excluded, and findings become reviewable.** §2 records the
+  reasoning and the exact counts (8 and 8); §7.1 specifies `finding_reviews`. The
+  requirement that came with the decision is the more interesting half: a correct finding
+  a reader has already judged must stop being ranked as new without being subtracted from
+  the count, which is §1 applied to a report rather than to a crawl.
+
+  **This closes step 7's gate.** Of 538 orphans on integrity.com: 480 are the `/partner/`
+  (270) and `/inspire/` (210) archives, browser-verified real; **9** are taxonomy archives,
+  now Excluded; 8 are thank-you and 8 campaign pages, now findings; the remaining 33 are
+  the leftovers the tool exists to find, including `/test/`, `/integrityconnect-ip-old/`
+  and two duplicate-slug pairs (`/integrity-planning/` vs `/integrityplanning/`,
+  `/integrityconnect-ip/` vs `/integrityconnect-ip-old/`). **Known false positives: 9 of
+  538, 1.7%**, against §13's "near zero".
+
+  Two honest limits on that number. The 480 were verified by probing **5** representative
+  pages of two homogeneous archive templates, not 480 pages, so their reality is an
+  inference from a verified mechanism rather than 480 measurements. And the 33 leftovers
+  were classified by reading slugs, which is exactly the inference §2 just refused to
+  encode as a rule — they are counted as findings because that is what an unreviewed
+  finding is, not because each was confirmed actionable. Both are arguments for §7.1
+  rather than against the gate: the reader's judgement is the missing measurement, and
+  the tool now has somewhere to put it.
 
 - Are the ~23 sitemap-less, REST-less hosts that look like real sites in scope?
   (The other ~24 are planenroll funnels, rate calculators and APIs — presumed out.)
