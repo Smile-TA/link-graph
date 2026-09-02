@@ -25,6 +25,14 @@ let sequence = 0;
 
 export interface TempDatabase {
   readonly pool: Pool;
+  /**
+   * The connection string of this database, for a test that exercises something which
+   * builds its own pool from `DATABASE_URL` — `packages/cli`'s commands do. Exposed
+   * rather than reconstructed by the caller, which had to ask the server for
+   * `current_database()` and rewrite `databaseUrl()`'s pathname to get back what this
+   * function already knew.
+   */
+  readonly url: string;
   /** Closes the pool and drops the database. */
   drop(): Promise<void>;
 }
@@ -54,6 +62,7 @@ export async function createTempDatabase(label: string): Promise<TempDatabase> {
   const pool = createPool(url.toString());
   return {
     pool,
+    url: url.toString(),
     async drop() {
       try {
         await pool.end();

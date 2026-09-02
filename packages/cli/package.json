@@ -8,8 +8,10 @@
   },
   "dependencies": {
     "@link-graph/analyse": "*",
+    "@link-graph/core": "*",
     "@link-graph/crawl": "*",
     "@link-graph/db": "*",
+    "@link-graph/review": "*",
     "@link-graph/truth": "*",
     "pg": "^8.23.0"
   },

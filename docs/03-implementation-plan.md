@@ -757,7 +757,9 @@ need JS to exist) and **classification** (PRD §2's Excluded classes still unbui
 behaving.
 
 **The run delivered real value regardless, which is worth recording:** 58 broken internal
-links with blast radius, led by `/integrityidol/` (404, linked from **18** pages), plus a
+link **edges** over **18** distinct targets — corrected 2026-09-02, see step 7.6; the
+finding count a person acts on is 18, and blast radii sum to 44 — led by `/integrityidol/`
+(404, linked from **18** pages), plus a
 malformed relative link resolving to
 `/inspire/…/teammembers/katiry-gonzalez/` — the RFC 3986 class step 2 found on
 tidewatermg.com, on a second site. The Excluded machinery works: 250 canonical-elsewhere,
@@ -777,7 +779,7 @@ deferred to step 10.
 
 ---
 
-## Step 7.6 — `review`: the findings sink — S
+## Step 7.6 — `review`: the findings sink — S — **done**
 
 **Why here.** Step 7's gate produced 529 correct findings on one site, and 16 of them are
 correct-and-intentional. A reader who cannot say "I have judged this one" reads the same
@@ -813,6 +815,45 @@ than a UI detail:
 `reviewed_by` is `--by` or `$USER`, and step 11 can tighten it — and no
 disappeared-then-returned detection, which needs step 13's crawl history and is recorded
 as §7.1's open gap.
+
+---
+
+**Built and verified 2026-09-02.** 429 unit + 152 integration (429/152 claimed, 429/152
+re-run independently; baseline was 334/113), lint and Prettier clean. `evidenceDigest` /
+`bucketFindings` / `reviewsFor` in `packages/review`, migration `011_finding_reviews.sql`,
+`findLatestCompleteCrawl`, and `note` + `report` on the CLI. `crawl`'s behaviour and
+`exit.ts`'s code table are unchanged — `exitCodeForSiteReport` maps the new shape onto the
+existing table.
+
+**Verified against the real 2,454-page crawl, not just fixtures.** Migrations `010` and
+`011` were applied to the dev database (it had been sitting at `009`), and the demo ran
+end to end: `report integrity-com` prints `Orphans 538 — 538 new`, one `note … orphan
+/agents/thank-you/ --intentional` moves it to `537 new … 1 reviewed (1 intentional, 0
+acknowledged)`, and **the total stays 538** with `crawl_metrics` reading `orphans=538
+broken=58` throughout. `--fixed` exits 1 quoting rule 4.
+
+**The four §1 tests were confirmed to bite by mutating the implementation**, rather than
+taken on the subagent's word: dropping `blast_radius` from the digest fails 3 tests
+including the pinned golden digest; filtering reviewed findings out of the set fails 5
+including "keeps the measured total whole"; adding `fixed` to `REVIEW_STATES` fails the
+refusal test (via the SQL CHECK — the layered defence holds).
+
+**Three measurements re-run independently, all three confirmed:** `btrim(E'\t') = ''` is
+**false** on postgres 18.6 — one-argument `btrim` strips spaces only, so the obvious
+non-blank check would have accepted a tab-only note, and it would have been immutable once
+applied; `ORDER BY … DESC` puts NULLs **first**, so `NULLS LAST` in
+`findLatestCompleteCrawl` is load-bearing; and crawl 1 holds **58 broken edges over 18
+targets with blast radii summing to 44**, which is the correction applied to step 7 above.
+
+**`findLatestCompleteCrawl` filters `env = 'prod'`**, because every page of
+`integrity-2024.staging02` is `noindex` (PRD §15), so a staging crawl reports
+`orphans: 0, linked: 0` — letting one become "the site's last crawl" would print a clean
+bill of health for a site nobody checked.
+
+**Two gaps disclosed in the output rather than hidden**, both needing an earlier step's
+data: `report` cannot reproduce `crawl`'s exit 3 for a provably short inventory, because
+step 5's truth findings are stored nowhere — the report body says so in as many words;
+and PRD §9's three-way split applies to `report`'s tables only, not `crawl`'s.
 
 ---
 

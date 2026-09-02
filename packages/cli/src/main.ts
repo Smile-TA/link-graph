@@ -14,9 +14,18 @@
 import { createPool, databaseUrl } from "@link-graph/db";
 import type { Pool } from "pg";
 import { parseArgs } from "./args.js";
-import { EXIT, UsageError, exitCodeForFailure, exitCodeForReport } from "./exit.js";
+import {
+  EXIT,
+  UsageError,
+  exitCodeForFailure,
+  exitCodeForReport,
+  exitCodeForSiteReport,
+} from "./exit.js";
+import { formatNoteOutcome, runNoteCommand } from "./note-command.js";
 import { formatReport } from "./report.js";
+import { runReportCommand } from "./report-command.js";
 import { runCrawlCommand, type CrawlCommandDeps } from "./run.js";
+import { formatSiteReport } from "./site-report.js";
 
 export interface Io {
   /** The report. Written once, at the end, or not at all. */
@@ -32,7 +41,23 @@ const USAGE = `link-graph — orphan and link analysis for the estate
 Usage:
   link-graph crawl <site-id>   resolve the site's truth source, crawl it, analyse it,
                                and print the orphan table
+  link-graph report <site-id>  re-read the site's last complete crawl and print its
+                               findings split by review state. Reads the database only:
+                               no network, no re-analysis, no number changed
+  link-graph note <site-id> <kind> <subject> --intentional|--acknowledged -m <note>
+                               [--by <who>]
+                               record one judgement of one finding
   link-graph --help
+
+<kind> is orphan or broken_internal_link. <subject> is the page the finding is about —
+a path or an absolute URL — which for a broken link is its target, not the pages linking
+to it.
+
+Reviewing a finding does not hide it and does not change a count: a report where every
+orphan has been judged reads "538 orphans, 538 reviewed" (PRD §7.1). --intentional means
+unlinked by design; --acknowledged means a real defect, seen, not fixed yet. There is no
+"fixed" state — a fixed orphan gains an inbound link and the next crawl stops reporting
+it. --by defaults to $USER.
 
 Installed as a workspace binary. The two invocations verified in a fresh checkout are
   npx link-graph crawl <site-id>
@@ -46,10 +71,16 @@ docs/03-implementation-plan.md); until it does, insert a row with upsertSite fro
 The database is DATABASE_URL, defaulting to the local docker-compose Postgres.
 
 Exit codes:
-  0  the orphan question was answered — the table printed is the whole site
-  1  usage, registry or configuration error; nothing was crawled
+  0  crawl:  the orphan question was answered — the table printed is the whole site
+     report: the stored crawl has an orphan count. It does NOT mean the inventory that
+             count was taken against was whole: whether a truth source went unread is
+             computed per run and stored nowhere, so a crawl that exited 3 for a short
+             inventory is re-read as a 0 here (PRD §15). The report says so in words
+     note:   the review was written
+  1  usage, registry or configuration error; nothing was crawled or written
   2  the run failed and printed no numbers: a partial crawl, an analysis that refused
-     this crawl, an unreachable or unmigrated database, or a bug. The message says which
+     this crawl, a crawl the analysis never finished, an unreachable or unmigrated
+     database, or a bug. The message says which
   3  the crawl finished and the orphan count is unknown: the site has no truth source,
      or the crawl was a sample. A coverage gap, never zero orphans`;
 
@@ -59,10 +90,19 @@ Exit codes:
  * and the only alternative — pointing it at a live host — earns an hour-long Wordfence
  * ban on the first 503 (PRD §5.1). Production passes nothing.
  */
+export interface CommandDeps extends CrawlCommandDeps {
+  /**
+   * Injected because two of the three commands print or store a time: a review's
+   * `reviewed_at`, and the age printed beside every review and every crawl. A test that
+   * asserts on "13 day(s) ago" cannot read the wall clock (engineering guide §4.4).
+   */
+  readonly now: () => Date;
+}
+
 export async function main(
   argv: readonly string[],
   io: Io,
-  deps: Partial<CrawlCommandDeps> = {},
+  deps: Partial<CommandDeps> = {},
 ): Promise<number> {
   const invocation = parseArgs(argv);
   if (invocation.kind === "help") {
@@ -77,6 +117,28 @@ export async function main(
   let pool: Pool | null = null;
   try {
     pool = connect(io.env, io);
+    const now = deps.now ?? (() => new Date());
+    if (invocation.kind === "report") {
+      const report = await runReportCommand(pool, invocation.siteId);
+      io.out(formatSiteReport(report, now()));
+      return exitCodeForSiteReport(report);
+    }
+    if (invocation.kind === "note") {
+      const outcome = await runNoteCommand(
+        pool,
+        {
+          siteId: invocation.siteId,
+          finding: invocation.finding,
+          subject: invocation.subject,
+          state: invocation.state,
+          note: invocation.note,
+          reviewedBy: reviewer(invocation.by, io.env),
+        },
+        now(),
+      );
+      io.out(formatNoteOutcome(outcome));
+      return EXIT.ok;
+    }
     // Progress is not part of `deps`: it is by definition what the operator sees, and
     // this is the only file that knows where that is.
     const report = await runCrawlCommand(
@@ -98,6 +160,23 @@ export async function main(
       await pool.end().catch((error: unknown) => printError(io, error));
     }
   }
+}
+
+/**
+ * Who is judging: `--by`, or `$USER`. No auth in phase 1 (PRD §7.1), and no anonymous
+ * fallback — a review nobody signed is one nobody can ask about, so an unset `$USER`
+ * with no `--by` is a refusal rather than a row saying "unknown".
+ */
+function reviewer(by: string | null, env: NodeJS.ProcessEnv | undefined): string {
+  if (by !== null) return by;
+  const user = (env ?? process.env)["USER"];
+  if (user === undefined || user.trim() === "") {
+    throw new UsageError(
+      `no --by given and $USER is not set, so this review would have no author. ` +
+        `Reviews are attributed to a person, not to a process`,
+    );
+  }
+  return user;
 }
 
 /** A `DATABASE_URL` that cannot be used is a usage error: nothing was crawled. */

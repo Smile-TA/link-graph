@@ -29,6 +29,16 @@ import type { Queryable } from "../pool.js";
 const FETCHED = `crawl_id = $1 AND status_code IS NOT NULL`;
 
 /**
+ * An internal edge whose target served an error — what `crawl_metrics.broken` counts,
+ * and what `listBrokenLinkFindings` lists the targets of. Written once for the reason
+ * `FETCHED` is: the report refuses to print when the edge count and the target list
+ * disagree, so a drift between the two predicates would make the report unprintable
+ * rather than wrong. Assumes the query aliases `links` as `l` and its target page as
+ * `t`, as both callers do.
+ */
+export const BROKEN_INTERNAL_EDGE = `NOT l.is_external AND t.status_code >= 400`;
+
+/**
  * Mark every edge of a crawl boilerplate or contextual (PRD §2, §6): boilerplate is a
  * `(target, anchor)` pair appearing on more than `thresholdPct`% of the crawl's fetched
  * pages.
@@ -267,8 +277,7 @@ export async function countAnalysedLinks(
   const { rows } = await db.query<LinkAnalysisCounts>(
     `SELECT
        count(*)::int AS total,
-       count(*) FILTER (
-         WHERE NOT l.is_external AND t.status_code >= 400)::int AS broken,
+       count(*) FILTER (WHERE ${BROKEN_INTERNAL_EDGE})::int AS broken,
        count(*) FILTER (
          WHERE NOT l.is_external
            AND (l.to_page_id IS NULL OR t.status_code IS NULL))::int

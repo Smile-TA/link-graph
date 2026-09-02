@@ -100,6 +100,43 @@ export async function findCrawl(db: Queryable, id: number): Promise<CrawlRow | n
   return rows[0] ?? null;
 }
 
+/**
+ * The site's most recent **complete** crawl — what `link-graph report` re-reads (step
+ * 7.6). `null` when the site has never had one, which the caller must refuse rather
+ * than report as a site with nothing to say.
+ *
+ * `status = 'complete'` and not "the latest crawl": a partial crawl holds an arbitrary
+ * subset of the site, `analyse` refuses it outright, and so it has no metrics row and no
+ * classified pages. Reporting from one would print a short orphan list as though it were
+ * the site (engineering guide §1).
+ *
+ * `env = 'prod'` because phase 1 crawls prod only (PRD §8) and staging is a different
+ * site, not a fresher copy of this one: **measured 2026-08-25, every page of
+ * integrity-2024.staging02 carries `noindex`**, so a staging crawl classifies every page
+ * Excluded and reports `orphans: 0` with `linked: 0` (PRD §15). Letting one become "the
+ * site's last crawl" would print that as a clean bill of health. Nothing writes `stage`
+ * yet — `crawl()` hardcodes `prod` — but `loadFixture` can, and step 14 makes it a real
+ * value; this is an `if` for a decision already made rather than a parameter.
+ *
+ * `NULLS LAST` is load-bearing, because Postgres sorts NULLs first on a DESC (measured).
+ * Every complete crawl the crawler writes has a `finished_at` — `finishCrawl` requires
+ * one — so the only way to get a NULL here is a fixture that omitted it, and sorting
+ * those last keeps such a row from displacing a real crawl.
+ */
+export async function findLatestCompleteCrawl(
+  db: Queryable,
+  siteId: number,
+): Promise<CrawlRow | null> {
+  const { rows } = await db.query<CrawlRow>(
+    `SELECT ${COLUMNS} FROM crawls
+     WHERE site_id = $1 AND status = 'complete' AND env = 'prod'
+     ORDER BY finished_at DESC NULLS LAST, id DESC
+     LIMIT 1`,
+    [siteId],
+  );
+  return rows[0] ?? null;
+}
+
 export interface CrawlOutcome {
   /**
    * `complete` or `partial`, never back to `running`. A crawl that ended early is

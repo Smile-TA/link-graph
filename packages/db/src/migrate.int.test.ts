@@ -20,9 +20,9 @@ import { MIGRATIONS_DIR, runMigrations } from "./migrate.js";
 import { createTempDatabase, type TempDatabase } from "./testing/temp-database.js";
 
 /**
- * The tables PRD §7 names, plus the runner's own bookkeeping and `crawl_frontier` —
- * which PRD §7 does not name and PRD §5.0 does: "Frontier + state | Postgres table"
- * (step 6, `009`).
+ * The tables PRD §7 names, plus the runner's own bookkeeping, `crawl_frontier` — which
+ * PRD §7 does not name and PRD §5.0 does: "Frontier + state | Postgres table" (step 6,
+ * `009`) — and `finding_reviews`, which PRD §7.1 names (step 7.6, `011`).
  */
 const EXPECTED_TABLES = [
   "crawl_diffs",
@@ -30,6 +30,7 @@ const EXPECTED_TABLES = [
   "crawl_metrics",
   "crawls",
   "external_urls",
+  "finding_reviews",
   "links",
   "pages",
   "registry_health",
@@ -176,6 +177,7 @@ describe("007 reclassifies the rows it invalidates", () => {
       "008_sample_scope.sql",
       "009_frontier.sql",
       "010_non_content_provenance.sql",
+      "011_finding_reviews.sql",
     ]);
 
     const { rows } = await db.pool.query<{ path: string; class: string }>(

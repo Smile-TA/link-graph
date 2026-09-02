@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { PartialCrawlError } from "@link-graph/crawl";
 import type { CrawlMetricsInput } from "@link-graph/db";
-import { EXIT, exitCodeForFailure, exitCodeForReport, UsageError } from "./exit.js";
+import {
+  EXIT,
+  exitCodeForFailure,
+  exitCodeForReport,
+  exitCodeForSiteReport,
+  UsageError,
+} from "./exit.js";
 import type { TruthFindingKind } from "@link-graph/truth";
 import { inventoryIsProvablyIncomplete, type CrawlReport } from "./report.js";
+import type { SiteReport } from "./site-report.js";
 import { someMetrics, someReport } from "./testing/report.js";
 
 const reportWith = (metrics: Partial<CrawlMetricsInput>): CrawlReport =>
@@ -164,5 +171,44 @@ describe("exitCodeForFailure", () => {
   /** A thrown non-Error still has to end the process non-zero. */
   it("fails on anything that is not an Error at all", () => {
     expect(exitCodeForFailure("boom")).toBe(EXIT.failed);
+  });
+});
+
+/**
+ * `report` re-reads a stored crawl, so its code comes from `crawl_metrics` alone — and
+ * it must be the same verdict `crawl` returned for the same numbers, or a cron job
+ * reading only the code would learn different things from the two commands.
+ */
+describe("exitCodeForSiteReport", () => {
+  const stored = (metrics: Partial<CrawlMetricsInput>) =>
+    ({
+      siteId: "403bplan-net",
+      canonicalHost: "403bplan.net",
+      truthSource: "sitemap",
+      crawl: {
+        finishedAt: null,
+        pages: 13,
+        links: 240,
+        truthSourceUrls: 13,
+        wasThrottled: false,
+      },
+      metrics: someMetrics(metrics),
+      orphans: [],
+      brokenLinks: [],
+    }) satisfies SiteReport;
+
+  it("answers 0 when the stored count is a count", () => {
+    expect(exitCodeForSiteReport(stored({ orphans: 4 }))).toBe(EXIT.ok);
+    // A genuine zero is still an answer.
+    expect(exitCodeForSiteReport(stored({ orphans: 0 }))).toBe(EXIT.ok);
+  });
+
+  it("answers 3 for either stored reason, never 0", () => {
+    for (const reason of ["no_truth_source", "sampled"] as const) {
+      expect(
+        exitCodeForSiteReport(stored({ orphans: null, orphansUnknownReason: reason })),
+        reason,
+      ).toBe(EXIT.undetectable);
+    }
   });
 });

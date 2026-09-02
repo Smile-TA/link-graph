@@ -21,8 +21,7 @@ import { analyse } from "@link-graph/analyse";
 import { crawl } from "@link-graph/crawl";
 import type { CrawlDeps } from "@link-graph/crawl";
 import {
-  findSiteBySlug,
-  listPages,
+  listOrphanFindings,
   upsertSite,
   type SiteRow,
   type TruthSource,
@@ -30,6 +29,7 @@ import {
 import { createHttpFetcher, resolveTruthSource, type TruthDeps } from "@link-graph/truth";
 import type { Pool } from "pg";
 import { UsageError } from "./exit.js";
+import { siteBySlug } from "./registry.js";
 import { reportProblem, type CrawlReport } from "./report.js";
 import { crawlSeeds } from "./seeds.js";
 
@@ -84,9 +84,14 @@ export async function runCrawlCommand(
 
   progress(`analysing crawl ${result.crawlId}: ${result.pages} page(s)…`);
   const metrics = await analyse(pool, result.crawlId);
-  const orphans = (await listPages(pool, result.crawlId))
-    .filter((page) => page.class === "orphan")
-    .map((page) => ({ urlNormalized: page.urlNormalized, statusCode: page.statusCode }));
+  // `listOrphanFindings` and not `listPages` filtered here: the report path (step 7.6)
+  // reads the same rows, and "this crawl's orphan rows" defined twice is exactly the
+  // disagreement `orphanListProblem` exists to catch. It also stops fetching all 2,454
+  // page rows of a large crawl to keep four of them.
+  const orphans = (await listOrphanFindings(pool, result.crawlId)).map((page) => ({
+    urlNormalized: page.urlNormalized,
+    statusCode: page.statusCode,
+  }));
 
   const report: CrawlReport = {
     siteId: site.siteId,
@@ -122,18 +127,12 @@ export async function runCrawlCommand(
  * The registry row, refused before a single request is made.
  *
  * Both refusals are `UsageError`s: the remedy is in the registry, the estate is fine,
- * and nothing was crawled.
+ * and nothing was crawled. The first of the two is shared with `note` and `report`
+ * (`registry.ts`); the second is this command's alone, because they read a crawl that
+ * has already happened.
  */
 async function registrySite(pool: Pool, siteId: string): Promise<SiteRow> {
-  const site = await findSiteBySlug(pool, siteId);
-  if (site === null) {
-    throw new UsageError(
-      `no site ${JSON.stringify(siteId)} in the registry. Nothing populates the sites ` +
-        `table yet — step 9 of docs/03-implementation-plan.md derives it from ` +
-        `deployment-configurations — so until then a row is inserted with upsertSite ` +
-        `from @link-graph/db`,
-    );
-  }
+  const site = await siteBySlug(pool, siteId);
   if (!site.enabled) {
     // PRD §3.1: an entry the platform does not serve enters the registry as
     // `enabled: false` and the liveness probe flips it on when it migrates. Crawling

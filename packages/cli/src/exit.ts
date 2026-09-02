@@ -8,6 +8,7 @@
  * clean" from "the site could not be checked" without parsing prose.
  */
 import { inventoryIsProvablyIncomplete, type CrawlReport } from "./report.js";
+import type { SiteReport } from "./site-report.js";
 
 export const EXIT = {
   /** The orphan question was answered. The table printed is the whole site. */
@@ -59,6 +60,26 @@ export function exitCodeForReport(report: CrawlReport): number {
   if (report.metrics.orphansUnknownReason !== null) return EXIT.undetectable;
   if (inventoryIsProvablyIncomplete(report.truth.findings)) return EXIT.undetectable;
   return EXIT.ok;
+}
+
+/**
+ * The same question after `report` as after `crawl` — "may I record this as the site's
+ * orphan count?" — answered from the stored `crawl_metrics` row rather than from a fresh
+ * resolution.
+ *
+ * **Deliberately the same predicate as `exitCodeForReport`'s first line**, and here
+ * rather than in `main`, because two definitions of "undetectable" at two altitudes is
+ * how the code a cron job reads comes to mean different things in two commands. No new
+ * code: this maps a second report shape onto the table above.
+ *
+ * It cannot reach `exitCodeForReport`'s second test. That one asks whether a truth
+ * source that could not be read left the inventory provably short (PRD §15), and step
+ * 5's findings are computed per run and stored nowhere — so a crawl that exited 3 for a
+ * short inventory is re-read here as an exit 0. The printed report says so in as many
+ * words; closing it needs the findings on the crawl row, which is not this step's.
+ */
+export function exitCodeForSiteReport(report: SiteReport): number {
+  return report.metrics.orphansUnknownReason !== null ? EXIT.undetectable : EXIT.ok;
 }
 
 export function exitCodeForFailure(error: unknown): number {

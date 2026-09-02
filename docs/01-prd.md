@@ -844,6 +844,19 @@ nofollow'>`** — verified on `/` and `/about-us/`, no `X-Robots-Tag`. Under §2
   rather than against the gate: the reader's judgement is the missing measurement, and
   the tool now has somewhere to put it.
 
+- **Open, surfaced 2026-09-02 while building §7.1: blast radius in the evidence digest
+  re-surfaces nav-linked 404s on every publish, and §7.1's own reasoning argues both
+  ways.** Rule 5 names blast radius as part of a broken link's evidence, so an
+  acknowledged 404 does not stay quiet when it goes from 18 inbound pages to 40. But for a
+  404 sitting in the global nav the radius **equals the site's page count**, so publishing
+  one page moves it and every acknowledged review of that kind reads "changed since
+  review" — which is exactly the reason the same rule excludes `depth`. Implemented as
+  specified, because the spec is the spec and the failure direction is a reader
+  re-judging something rather than a finding going quiet. Three ways out: quantise the
+  radius (bands, not an exact count), exclude boilerplate edges from it, or accept the
+  noise. Needs a decision before a second site is reviewed in anger; on integrity.com
+  today the 18 broken targets have radii of 1–18, so nothing is currently affected.
+
 - Are the ~23 sitemap-less, REST-less hosts that look like real sites in scope?
   (The other ~24 are planenroll funnels, rate calculators and APIs — presumed out.)
 - Boilerplate threshold N — start at 60%, tune against real data.

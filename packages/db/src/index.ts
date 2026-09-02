@@ -44,6 +44,7 @@ export type { RegistryHealthInput } from "./repo/registry-health.js";
 export {
   insertCrawl,
   findCrawl,
+  findLatestCompleteCrawl,
   finishCrawl,
   reopenCrawl,
   countCrawlRows,
@@ -96,3 +97,23 @@ export {
 export type { LinkAnalysisCounts, PageAnalysisFact } from "./repo/analysis.js";
 export { insertCrawlDiff, listCrawlDiffs } from "./repo/crawl-diffs.js";
 export type { CrawlDiffInput } from "./repo/crawl-diffs.js";
+export { listOrphanFindings, listBrokenLinkFindings } from "./repo/findings.js";
+export type { BrokenLinkFinding, OrphanFinding } from "./repo/findings.js";
+// Test scaffolding, exported for the reason `createTempDatabase` is (guide §4.3): the
+// bucketing tests in packages/review and the report tests in packages/cli both build
+// this row, and three builders for one nine-column row is three things to edit per
+// column.
+export { someFindingReview } from "./testing/reviews.js";
+export {
+  findFindingReview,
+  listFindingReviews,
+  upsertFindingReview,
+  FINDING_KINDS,
+  REVIEW_STATES,
+} from "./repo/finding-reviews.js";
+export type {
+  FindingKind,
+  FindingReviewInput,
+  FindingReviewRow,
+  ReviewState,
+} from "./repo/finding-reviews.js";

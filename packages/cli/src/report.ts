@@ -14,11 +14,17 @@
  * - the degradations step 5 computes and nothing stores are printed rather than dropped.
  */
 import { isInventory } from "@link-graph/db";
-import type {
-  CrawlMetricsInput,
-  OrphansUnknownReason,
-  TruthSource,
-} from "@link-graph/db";
+import {
+  allAssessedLinkedRow,
+  nothingAssessedRow,
+  orphanListProblem,
+  orphanTableTitle,
+  pageClassRow,
+  statusCell,
+  unknownOrphansRow,
+} from "./report-rows.js";
+import { indented, prosaicRow, row } from "./text.js";
+import type { CrawlMetricsInput, TruthSource } from "@link-graph/db";
 import type { TruthFinding, TruthFindingKind, TruthSourceKind } from "@link-graph/truth";
 
 export interface OrphanRow {
@@ -103,50 +109,6 @@ export interface CrawlReport {
 }
 
 /**
- * Why this site's orphan count is unknown, in the words the reader needs — and the
- * remedy, which is the part `crawl_metrics.orphans_unknown_reason` cannot carry.
- *
- * **`no_truth_source` covers two facts with different remedies, and the reason column
- * cannot tell them apart.** `006_truth_source.sql` added `unreachable` to
- * `sites.truth_source` precisely because "we asked and there is no inventory" and "the
- * host never answered" are different — `agents.integrity.com` has no DNS and
- * `integritymedicarehelpline.com` refuses connections, while both hold live configs
- * (PRD §3.1). Printing "the remedy is a truth source, not a crawl" at a dead host sends
- * the reader after a content decision for a deployment fault, so the sentence is chosen
- * from `truth.kind`, which does distinguish them.
- */
-function unknownReasonSentence(
-  reason: OrphansUnknownReason,
-  truthKind: TruthSourceKind,
-): string {
-  if (reason === "sampled") {
-    return (
-      "this crawl covered a page ceiling rather than the whole site, by policy " +
-      "(PRD §15), so a page with no inbound link may simply be linked from one the " +
-      "crawl skipped. Deliberate, and not a coverage failure — broken links and " +
-      "structure below still hold."
-    );
-  }
-  if (truthKind === "unreachable") {
-    // Deliberately not "the host is down". A host that answers nothing produces a crawl
-    // with no pages, which is `partial`, which throws — so this sentence can only ever
-    // be read beside a page count above it. What actually happened is narrower and more
-    // useful: the truth-source paths did not answer while the site did.
-    return (
-      "nothing answered on this host's truth-source paths — /wp-json/ and the sitemap " +
-      "candidates — so no inventory was resolved either way, while the pages counted " +
-      "above served normally. A WAF or a blocked REST route, not a site with nothing " +
-      "published, and not zero orphans."
-    );
-  }
-  return (
-    "this site has no inventory to take the set difference against, so the orphan " +
-    "question cannot be answered here at all. A coverage gap (PRD §2), not zero " +
-    "orphans — the remedy is a truth source, not a crawl."
-  );
-}
-
-/**
  * What is wrong with this report, as a sentence, or `null` if nothing is.
  *
  * Each check compares two facts that were derived independently and must agree. The
@@ -162,20 +124,8 @@ function unknownReasonSentence(
  */
 export function reportProblem(report: CrawlReport): string | null {
   const { metrics, orphans } = report;
-  if (metrics.orphans === null) {
-    if (orphans.length > 0) {
-      return (
-        `its orphan count is unknown (${metrics.orphansUnknownReason ?? "no reason"}) ` +
-        `and yet ${orphans.length} page(s) are classified orphan. The count and the ` +
-        `page list are two answers to one question, and a reader acts on the list`
-      );
-    }
-  } else if (orphans.length !== metrics.orphans) {
-    return (
-      `it counts ${metrics.orphans} orphan(s) and lists ${orphans.length}. One of the ` +
-      `two is wrong and nothing here can say which`
-    );
-  }
+  const disagreement = orphanListProblem(metrics, orphans.length);
+  if (disagreement !== null) return disagreement;
 
   // Every page of a crawl carries exactly one class, so the five counts account for the
   // whole page set. A page short means a page whose class was never written — and an
@@ -217,22 +167,13 @@ export function reportProblem(report: CrawlReport): string | null {
   return null;
 }
 
-const LABEL = 15;
-/** Prose wraps here; the terminal would wrap it without the continuation indent. */
-const WIDTH = 88;
-
 export function formatReport(report: CrawlReport): string {
   const { truth, metrics } = report;
   const lines = [
     row("Site", `${report.siteId}  ${report.canonicalHost}`),
     row("Truth source", truthSource(report)),
     row("Crawl", crawlLine(report)),
-    row(
-      "Pages",
-      `${metrics.linked} linked, ${metrics.orphans ?? "?"} orphan, ${metrics.excluded} ` +
-        `excluded, ${metrics.notInTruthSource} not in truth source, ` +
-        `${metrics.undetectable} undetectable`,
-    ),
+    pageClassRow(metrics),
     row(
       "Links",
       `${metrics.broken} broken, ${metrics.internalUnresolved} internal unresolved, ` +
@@ -302,11 +243,7 @@ function crawlLine(report: CrawlReport): string {
 function orphanSummary(report: CrawlReport): string {
   const { orphans, orphansUnknownReason } = report.metrics;
   if (orphansUnknownReason !== null) {
-    return prosaicRow(
-      "Orphans",
-      `unknown — ${orphansUnknownReason}: ` +
-        unknownReasonSentence(orphansUnknownReason, report.truth.kind),
-    );
+    return unknownOrphansRow(orphansUnknownReason, report.truth.kind);
   }
   // Exit 3 is returned for this case (`exit.ts`), so the line a person reads must not
   // claim more than the code does. "none" in particular would be a clean bill of health
@@ -319,88 +256,24 @@ function orphanSummary(report: CrawlReport): string {
         `the findings below`,
     );
   }
-  // Zero orphans has two causes and they are not the same news. Measured 2026-08-25 on
-  // integrity-2024.staging02.imgwebhost.com, where every page carries
-  // `<meta name=robots content='noindex, nofollow'>`: every page is then Excluded — the
-  // crawl root included, since Excluded outranks the crawl-root rule — so `linked` is 0
-  // and the orphan question was never asked of a single URL. Saying "every URL has an
-  // inbound link" there is false, and false in the direction that reads as good news.
   if (orphans === 0 && report.metrics.linked === 0) {
-    return prosaicRow(
-      "Orphans",
-      `none found, and none could be: no page of the truth source was assessed. ` +
-        `${report.metrics.excluded} page(s) are excluded — noindex, a canonical ` +
-        `pointing elsewhere, a redirect, an ignore_paths match, or a non-content type ` +
-        `such as a taxonomy or author archive (PRD §2, §4) — ` +
-        `so the orphan question was asked of nothing. A site-wide noindex, as staging ` +
-        `environments carry, produces exactly this`,
-    );
+    return nothingAssessedRow(report.metrics);
   }
-  if (orphans === 0) {
-    // "every URL in the truth source" would be false whenever anything was excluded —
-    // and since 010 that includes every taxonomy and author archive, which is most
-    // WordPress sites. The question was asked of the pages that were assessed, and the
-    // count of the ones it was not asked of belongs in the same sentence.
-    const aside =
-      report.metrics.excluded === 0
-        ? ""
-        : ` (${report.metrics.excluded} excluded page(s) were not assessed)`;
-    // `prosaicRow` and not `row`: this sentence is now past the 88-column width that
-    // `row` does not wrap, as the branch above it already was.
-    return prosaicRow(
-      "Orphans",
-      `none — every URL assessed has at least one inbound internal link${aside}`,
-    );
-  }
+  if (orphans === 0) return allAssessedLinkedRow(report.metrics);
   return row("Orphans", `${orphans} — listed below`);
 }
 
 function orphanTable(orphans: readonly OrphanRow[]): string[] {
   const lines = [
-    `Orphans — in the truth source, published, indexable, and nothing on this site ` +
-      `links to them (${orphans.length}):`,
+    orphanTableTitle(orphans.length),
     "",
     `  ${"#".padStart(3)}  ${"status".padStart(6)}  URL`,
   ];
   for (const [index, orphan] of orphans.entries()) {
-    // "-" rather than a blank: a page row with no status was never fetched, and an
-    // empty cell reads as a formatting accident rather than as a fact.
-    const status = orphan.statusCode === null ? "-" : `${orphan.statusCode}`;
     lines.push(
-      `  ${String(index + 1).padStart(3)}  ${status.padStart(6)}  ${orphan.urlNormalized}`,
+      `  ${String(index + 1).padStart(3)}  ` +
+        `${statusCell(orphan.statusCode).padStart(6)}  ${orphan.urlNormalized}`,
     );
   }
-  return lines;
-}
-
-const row = (label: string, value: string): string => `${label.padEnd(LABEL)}${value}`;
-
-/** A row whose value is a sentence: wrapped, and continuing under the value column. */
-const prosaicRow = (label: string, value: string): string =>
-  indented(value, label.padEnd(LABEL), " ".repeat(LABEL));
-
-/**
- * Wrapped to `WIDTH`, with the first line prefixed by `first` and the rest by `cont`.
- * The prefixes are applied after wrapping rather than being part of the text, because
- * padding is not a word and would be wrapped as one.
- */
-function indented(text: string, first: string, cont: string): string {
-  return wrap(text, WIDTH - cont.length)
-    .map((line, index) => `${index === 0 ? first : cont}${line}`)
-    .join("\n");
-}
-
-function wrap(text: string, width: number): string[] {
-  const lines: string[] = [];
-  let line = "";
-  for (const word of text.split(" ")) {
-    if (line === "") line = word;
-    else if (line.length + 1 + word.length <= width) line = `${line} ${word}`;
-    else {
-      lines.push(line);
-      line = word;
-    }
-  }
-  lines.push(line);
   return lines;
 }
