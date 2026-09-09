@@ -77,7 +77,13 @@ export {
 export type { PageClass, PageInput, PageRow } from "./repo/pages.js";
 export { insertLinks, listLinks, resolveLinkTargets } from "./repo/links.js";
 export type { LinkInput, LinkRow } from "./repo/links.js";
-export { upsertExternalUrl, findExternalUrl } from "./repo/external-urls.js";
+export {
+  upsertExternalUrl,
+  upsertExternalUrls,
+  findExternalUrl,
+  listExternalUrlsDue,
+  countExternalUrls,
+} from "./repo/external-urls.js";
 export type { ExternalUrlInput } from "./repo/external-urls.js";
 export {
   upsertCrawlMetrics,

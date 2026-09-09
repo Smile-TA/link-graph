@@ -17,7 +17,13 @@ import {
   type OrphansUnknownReason,
 } from "./repo/crawl-metrics.js";
 import { findCrawl, insertCrawl } from "./repo/crawls.js";
-import { findExternalUrl, upsertExternalUrl } from "./repo/external-urls.js";
+import {
+  countExternalUrls,
+  findExternalUrl,
+  listExternalUrlsDue,
+  upsertExternalUrl,
+  upsertExternalUrls,
+} from "./repo/external-urls.js";
 import { insertLinks } from "./repo/links.js";
 import { insertRegistryHealth, listRegistryHealth } from "./repo/registry-health.js";
 import {
@@ -205,18 +211,21 @@ describe("external_urls", () => {
       lastChecked: null,
       statusCode: null,
       unverified: false,
+      detail: null,
     });
     expect(await findExternalUrl(db.pool, url)).toEqual({
       urlNormalized: url,
       lastChecked: null,
       statusCode: null,
       unverified: false,
+      detail: null,
     });
     await upsertExternalUrl(db.pool, {
       urlNormalized: url,
       lastChecked: new Date("2026-08-20T10:00:00.000Z"),
       statusCode: 403,
       unverified: true,
+      detail: "HTTP 403: the host refused us access",
     });
     const checked = await findExternalUrl(db.pool, url);
     expect([checked?.statusCode, checked?.unverified]).toEqual([403, true]);
@@ -224,6 +233,44 @@ describe("external_urls", () => {
       `SELECT count(*) AS n FROM external_urls`,
     );
     expect(rows[0]?.n).toBe(1);
+  });
+
+  it("writes a whole run in one statement and reports how many rows it wrote", async () => {
+    const written = await upsertExternalUrls(db.pool, [
+      {
+        urlNormalized: "https://a.example.org/",
+        lastChecked: new Date("2026-09-02T12:00:00.000Z"),
+        statusCode: 200,
+        unverified: false,
+        detail: null,
+      },
+      {
+        urlNormalized: "https://b.example.org/",
+        lastChecked: new Date("2026-09-02T12:00:00.000Z"),
+        statusCode: null,
+        unverified: true,
+        detail: "the request timed out",
+      },
+    ]);
+    expect(written).toBe(2);
+    expect(await upsertExternalUrls(db.pool, [])).toBe(0);
+  });
+
+  it("lists a crawl's external URLs that are due, and counts them all", async () => {
+    // The fixture crawl has one external edge, to www.integritymarketing.com.
+    expect(await countExternalUrls(db.pool, crawlId)).toBe(1);
+    const cutoff = new Date("2026-09-02T12:00:00.000Z");
+    await upsertExternalUrl(db.pool, {
+      urlNormalized: "https://www.integritymarketing.com/",
+      lastChecked: new Date("2026-09-02T13:00:00.000Z"),
+      statusCode: 200,
+      unverified: false,
+      detail: null,
+    });
+    expect(await listExternalUrlsDue(db.pool, crawlId, cutoff)).toEqual([]);
+    expect(
+      await listExternalUrlsDue(db.pool, crawlId, new Date("2026-09-03T00:00:00.000Z")),
+    ).toEqual(["https://www.integritymarketing.com/"]);
   });
 });
 

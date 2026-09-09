@@ -1,0 +1,222 @@
+{
+  "total": 11,
+  "unique": 11,
+  "successful": 2,
+  "unknown": 0,
+  "unsupported": 0,
+  "timeouts": 1,
+  "redirects": 1,
+  "remaps": 0,
+  "excludes": 1,
+  "errors": 7,
+  "cached": 0,
+  "success_map": {
+    "stdin": [
+      {
+        "url": "http://127.0.0.1:8799/live/",
+        "status": {
+          "text": "200 OK",
+          "code": 200
+        },
+        "span": {
+          "line": 1,
+          "column": 1
+        },
+        "duration": {
+          "secs": 0,
+          "nanos": 202312996
+        }
+      },
+      {
+        "url": "http://127.0.0.1:8799/moved/",
+        "status": {
+          "text": "200 OK",
+          "code": 200
+        },
+        "redirects": {
+          "origin": "http://127.0.0.1:8799/moved/",
+          "redirects": [
+            {
+              "url": "http://127.0.0.1:8799/live/",
+              "code": 301
+            }
+          ]
+        },
+        "span": {
+          "line": 2,
+          "column": 1
+        },
+        "duration": {
+          "secs": 0,
+          "nanos": 11625707
+        }
+      }
+    ]
+  },
+  "error_map": {
+    "stdin": [
+      {
+        "url": "http://127.0.0.1:8799/gone/",
+        "status": {
+          "text": "Rejected status code: 404 Not Found",
+          "code": 404
+        },
+        "span": {
+          "line": 3,
+          "column": 1
+        },
+        "duration": {
+          "secs": 0,
+          "nanos": 23536335
+        }
+      },
+      {
+        "url": "http://127.0.0.1:8799/ratelimited/",
+        "status": {
+          "text": "Rejected status code: 429 Too Many Requests",
+          "code": 429
+        },
+        "span": {
+          "line": 5,
+          "column": 1
+        },
+        "duration": {
+          "secs": 0,
+          "nanos": 44770740
+        }
+      },
+      {
+        "url": "http://127.0.0.1:1/refused/",
+        "status": {
+          "text": "Network error: Connection refused - server may be down or port blocked (error sending request for url (http://127.0.0.1:1/refused/))",
+          "details": "Connection refused - server may be down or port blocked"
+        },
+        "span": {
+          "line": 9,
+          "column": 1
+        },
+        "duration": {
+          "secs": 93,
+          "nanos": 57393418
+        }
+      },
+      {
+        "url": "http://127.0.0.1:8799/ok",
+        "status": {
+          "text": "Rejected status code: 404 Not Found",
+          "code": 404
+        },
+        "span": {
+          "line": 8,
+          "column": 1
+        },
+        "duration": {
+          "secs": 83,
+          "nanos": 55574988
+        }
+      },
+      {
+        "url": "http://127.0.0.1:8799/forbidden/",
+        "status": {
+          "text": "Rejected status code: 403 Forbidden",
+          "code": 403
+        },
+        "span": {
+          "line": 4,
+          "column": 1
+        },
+        "duration": {
+          "secs": 0,
+          "nanos": 34145564
+        }
+      },
+      {
+        "url": "http://127.0.0.1:8799/boom/",
+        "status": {
+          "text": "Rejected status code: 500 Internal Server Error",
+          "code": 500
+        },
+        "span": {
+          "line": 6,
+          "column": 1
+        },
+        "duration": {
+          "secs": 60,
+          "nanos": 48591390
+        }
+      },
+      {
+        "url": "https://127.0.0.1:8799/tls/",
+        "status": {
+          "text": "Network error: Network error: received corrupt message of type InvalidContentType (error sending request for url (https://127.0.0.1:8799/tls/))",
+          "details": "Network error: received corrupt message of type InvalidContentType"
+        },
+        "span": {
+          "line": 10,
+          "column": 1
+        },
+        "duration": {
+          "secs": 103,
+          "nanos": 91584423
+        }
+      }
+    ]
+  },
+  "timeout_map": {
+    "stdin": [
+      {
+        "url": "http://127.0.0.1:8799/hang/",
+        "status": {
+          "text": "Timeout",
+          "details": "Request timed out"
+        },
+        "span": {
+          "line": 7,
+          "column": 1
+        },
+        "duration": {
+          "secs": 73,
+          "nanos": 52640013
+        }
+      }
+    ]
+  },
+  "suggestion_map": {},
+  "redirect_map": {
+    "stdin": [
+      {
+        "origin": "http://127.0.0.1:8799/moved/",
+        "redirects": [
+          {
+            "url": "http://127.0.0.1:8799/live/",
+            "code": 301
+          }
+        ]
+      }
+    ]
+  },
+  "excluded_map": {
+    "stdin": [
+      {
+        "url": "https://twitter.com/IntegrityMG",
+        "status": {
+          "text": "Excluded",
+          "details": "This is due to your 'exclude' values"
+        },
+        "span": {
+          "line": 11,
+          "column": 1
+        },
+        "duration": {
+          "secs": 0,
+          "nanos": 18135
+        }
+      }
+    ]
+  },
+  "duration": {
+    "secs": 103,
+    "nanos": 305493731
+  },
+  "detailed_stats": true
+}

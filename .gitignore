@@ -25,6 +25,11 @@ playwright/.auth/
 # --- lychee (external link checker, PRD §6.1) ---
 # our external_urls table is the source of truth, not this cache
 .lycheecache
+# The lychee binary itself. 17.9 MB of third-party Mach-O/ELF, fetched by
+# scripts/fetch-lychee.sh against the release's published sha256 — a multi-megabyte
+# executable committed here would be effectively irreversible, and PRD §8 vendors it
+# into the worker image rather than into the repository.
+vendor/
 
 # --- local Postgres volume (docker compose) ---
 .data/

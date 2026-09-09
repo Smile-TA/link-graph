@@ -1,0 +1,12 @@
+http://127.0.0.1:8799/live/
+http://127.0.0.1:8799/moved/
+http://127.0.0.1:8799/gone/
+http://127.0.0.1:8799/forbidden/
+http://127.0.0.1:8799/ratelimited/
+http://127.0.0.1:8799/boom/
+http://127.0.0.1:8799/hang/
+http://127.0.0.1:8799/ok.
+http://127.0.0.1:1/refused/
+https://127.0.0.1:8799/tls/
+https://twitter.com/IntegrityMG
+tel:+15551234567

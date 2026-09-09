@@ -10,3 +10,7 @@ packages/analyse/test/fixtures/
 # Recorded HTTP responses (bodies + the manifest of the URLs they came from). Prettier
 # would reformat the captured XML and JSON, and the tests count entries in them.
 packages/truth/test/fixtures/
+# Verbatim stdout of a real lychee run, plus the URL list it was given. Reformatting the
+# JSON would edit the record of what the subprocess actually emitted, and the tests join
+# the two files by line number.
+packages/linkcheck/test/fixtures/
