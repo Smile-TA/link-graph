@@ -13,6 +13,7 @@
  *   set (PRD §5.1), and it is made in `fetch-page.ts` where that set is in scope.
  */
 import { Agent, request } from "undici";
+import { USER_AGENT } from "@link-graph/core";
 import { isHtmlContentType } from "./record.js";
 
 export interface FetchResponse {
@@ -31,13 +32,6 @@ export interface CrawlFetcher {
   /** Releases pooled connections. Absent on a fake, which has none to release. */
   close?(): Promise<void>;
 }
-
-/**
- * Exported because `createPlaywrightFetcher` presents the same identity: the two
- * fetchers crawl one estate, and a WAF rule written against one of them has to apply
- * to the other.
- */
-export const USER_AGENT = "link-graph/0.1 (+link audit)";
 
 /**
  * The request headers, measured rather than assumed.

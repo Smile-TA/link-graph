@@ -857,7 +857,7 @@ and PRD §9's three-way split applies to `report`'s tables only, not `crawl`'s.
 
 ---
 
-## Step 8 — `linkcheck`: lychee — M
+## Step 8 — `linkcheck`: lychee — M — **done; gates passed 2026-09-09**
 
 Vendored static binary as a subprocess over external URLs due for a check (PRD §6.1).
 Shared `external_urls` table with a TTL, so a destination linked from 40 sites is

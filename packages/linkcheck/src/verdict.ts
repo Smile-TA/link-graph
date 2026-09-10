@@ -14,6 +14,7 @@
  * 0.24.2 against a local server and, where it could be, against the estate's own
  * external URLs (see `test/fixtures/README.md`).
  */
+import type { LinkcheckCounts } from "./summary.js";
 
 export type LinkOutcome =
   /** The checker got an HTTP response, after following any redirects. */
@@ -128,12 +129,11 @@ export function isBrokenExternal(verdict: ExternalUrlVerdict): boolean {
   return !verdict.unverified && verdict.statusCode !== null && verdict.statusCode >= 400;
 }
 
-export interface LinkcheckProgress {
-  /** URLs the run handed to the checker. */
-  readonly checked: number;
-  /** Of those, how many got an answer that means something — 2xx/3xx, 404 or 410. */
-  readonly conclusive: number;
-}
+/**
+ * URLs the run handed to the checker (`checked`), and of those, how many got an
+ * answer that means something — 2xx/3xx, 404 or 410 (`conclusive`).
+ */
+export type LinkcheckProgress = Pick<LinkcheckCounts, "checked" | "conclusive">;
 
 export interface LinkcheckVerdict {
   readonly status: "complete" | "partial";

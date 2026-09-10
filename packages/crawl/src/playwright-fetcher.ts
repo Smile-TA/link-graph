@@ -38,7 +38,8 @@
  */
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { isHtmlContentType } from "./record.js";
-import { USER_AGENT, type CrawlFetcher, type FetchResult } from "./fetcher.js";
+import { USER_AGENT } from "@link-graph/core";
+import { type CrawlFetcher, type FetchResult } from "./fetcher.js";
 
 /**
  * Resource types that cannot contain an `<a href>` and are therefore requests bought

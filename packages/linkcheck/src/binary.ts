@@ -66,13 +66,14 @@ export function resolveLycheeBinary(
   env: Readonly<Record<string, string | undefined>>,
   deps: BinaryDeps = realDeps,
 ): string {
-  const override = env["LYCHEE_BIN"]?.trim();
+  const raw = env["LYCHEE_BIN"]?.trim();
   // An empty LYCHEE_BIN is what an unset variable looks like in a Compose file, and
   // spawning "" fails with a message about the empty string rather than about lychee.
-  const path = override === undefined || override === "" ? VENDORED_LYCHEE : override;
+  const hasOverride = raw !== undefined && raw !== "";
+  const path = hasOverride ? raw : VENDORED_LYCHEE;
   if (deps.isExecutable(path)) return path;
   throw new Error(
-    `no executable lychee at ${path}${override === undefined || override === "" ? "" : " (from LYCHEE_BIN)"}. ` +
+    `no executable lychee at ${path}${hasOverride ? " (from LYCHEE_BIN)" : ""}. ` +
       `External link checking needs the ${LYCHEE_RELEASE} binary: run ` +
       `\`scripts/fetch-lychee.sh\`, which downloads it into vendor/ and verifies the ` +
       `release's published sha256, or set LYCHEE_BIN to a copy you already have. ` +

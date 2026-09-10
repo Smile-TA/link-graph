@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
+    "@link-graph/core": "*",
     "@link-graph/db": "*"
   },
   "devDependencies": {

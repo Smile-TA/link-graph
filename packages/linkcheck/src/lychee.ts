@@ -8,6 +8,7 @@
  */
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
+import { USER_AGENT } from "@link-graph/core";
 import { parseLycheeReport, type LycheeReport } from "./report.js";
 
 export interface LycheeRunner {
@@ -54,20 +55,6 @@ export interface LycheeOptions {
   /** Sent to third parties, so a host that blocks us can name us. */
   readonly userAgent?: string;
 }
-
-/**
- * Duplicated from `packages/crawl/src/fetcher.ts`, which exports it for exactly this
- * reason: "the two fetchers crawl one estate, and a WAF rule written against one of them
- * has to apply to the other." A third requester of the same estate makes that three
- * copies, and the string belongs in `packages/core` — lifting it there edits step 6's
- * committed module, so it is named here instead, as steps 6 and 7 named theirs.
- *
- * Measured 2026-09-02: three of the estate's most likely blockers —
- * `www.facebook.com/IntegrityMG`, `www.linkedin.com/company/integrity-marketing-/`,
- * `www.instagram.com/integritymktg/` — answer 200 under this user-agent, the same as
- * under lychee's own default.
- */
-const USER_AGENT = "link-graph/0.1 (+link audit)";
 
 const DEFAULTS = {
   hostIntervalMs: 1000,

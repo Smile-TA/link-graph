@@ -180,13 +180,16 @@ function readEntry(item: unknown, map: LycheeMap): LycheeEntry {
     line,
     map,
     statusCode: typeof code === "number" ? code : null,
-    text:
-      typeof details === "string" && details !== ""
-        ? details
-        : typeof text === "string"
-          ? text
-          : "",
+    text: firstNonEmptyString(details, text),
   };
+}
+
+/** `status.details` when present, else `status.text`, else "" — first usable string. */
+function firstNonEmptyString(...values: readonly unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value !== "") return value;
+  }
+  return "";
 }
 
 function parseJson(stdout: string): Record<string, unknown> {

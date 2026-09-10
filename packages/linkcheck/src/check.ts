@@ -82,21 +82,19 @@ export async function checkExternalUrls(
   const ttlHours = options.ttlHours ?? DEFAULT_TTL_HOURS;
   const checkedBefore = new Date(now.getTime() - ttlHours * 60 * 60 * 1000);
 
-  const external = await countExternalUrls(db, crawlId);
-  const due = await listExternalUrlsDue(db, crawlId, checkedBefore);
+  const [external, due] = await Promise.all([
+    countExternalUrls(db, crawlId),
+    listExternalUrlsDue(db, crawlId, checkedBefore),
+  ]);
   if (due.length === 0) {
     // Not a failure: the TTL did its job, or the crawl has no external links. The counts
     // say which, so a caller cannot print "0 broken" as though 642 had been asked.
     return {
+      ...summariseResults([], now).counts,
       external,
       due: 0,
       fresh: external,
       recorded: 0,
-      checked: 0,
-      ok: 0,
-      broken: 0,
-      unverified: 0,
-      conclusive: 0,
     };
   }
 
