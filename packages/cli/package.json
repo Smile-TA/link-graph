@@ -11,6 +11,7 @@
     "@link-graph/core": "*",
     "@link-graph/crawl": "*",
     "@link-graph/db": "*",
+    "@link-graph/registry": "*",
     "@link-graph/review": "*",
     "@link-graph/truth": "*",
     "pg": "^8.23.0"

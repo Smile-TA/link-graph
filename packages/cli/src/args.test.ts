@@ -254,3 +254,26 @@ describe("parseArgs: report", () => {
     expect(problem(parseArgs(["report", "a", "b"]))).toMatch(/unexpected argument "b"/);
   });
 });
+
+describe("parseArgs: registry", () => {
+  it("reads sync and report, with no site id", () => {
+    expect(parseArgs(["registry", "sync"])).toEqual({ kind: "registry-sync" });
+    expect(parseArgs(["registry", "report"])).toEqual({ kind: "registry-report" });
+  });
+
+  it("refuses registry with no subcommand", () => {
+    expect(problem(parseArgs(["registry"]))).toMatch(/sync or report/);
+  });
+
+  it("refuses an unknown registry subcommand", () => {
+    expect(problem(parseArgs(["registry", "bogus"]))).toMatch(
+      /unknown registry subcommand "bogus"/,
+    );
+  });
+
+  it("refuses an extra argument after the subcommand", () => {
+    expect(problem(parseArgs(["registry", "sync", "extra"]))).toMatch(
+      /unexpected argument "extra"/,
+    );
+  });
+});

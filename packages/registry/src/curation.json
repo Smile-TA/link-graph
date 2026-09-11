@@ -1,0 +1,146 @@
+{
+  "aegisfinancial.com-2026": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "aegisfinancial.com-traefik-canary": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "agentpipeline.com": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "agentpipeline.com-traefik-canary": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "agentpipeline.com-v2": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "aimc.net": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "all-in-one-wpm-backup": {
+    "excluded": true,
+    "reason": "platform/GitOps utility, not a content site"
+  },
+  "all-in-one-wpm-restore": {
+    "excluded": true,
+    "reason": "platform/GitOps utility, not a content site"
+  },
+  "beneficiarychoice.org": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "beneficiarychoice.org-traefik-canary": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "beneficiarychoice.org-v2": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "deftondemand.com": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "emrickgroup.com": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "emrickgroup.com-2026": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "emrickgroup.com-traefik-canary": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "img-wp-theme-boilerplate": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "integrity.com": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "integrity.com-2024": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "integrity.com-2025": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "integrity.com-traefik-canary": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "integrityleadcenter.com": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "orgcorp.com": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "premiersmi.com": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "premiersmi.com-2025": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "premiersmi.com-traefik-canary": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "sandbox2026": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "savershealth.com": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "savershealth.com-traefik-canary": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "savershealth.com-v2": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "tidewatermg.com": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "tssagents.com": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "vault-ingress": {
+    "excluded": true,
+    "reason": "platform/GitOps utility, not a content site"
+  },
+  "wordfence-log-exporter": {
+    "excluded": true,
+    "reason": "platform/GitOps utility, not a content site"
+  },
+  "yourinsurancegroup.net": {
+    "excluded": true,
+    "reason": "no prod hostname (ingress.enabled:false, non-content utility, or variant dir superseded by another app)"
+  },
+  "yourinsurancegroup.net-traefik-canary": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  },
+  "yourinsurancegroup.net-v2": {
+    "excluded": true,
+    "reason": "variant directory, superseded by the dated/canary sibling app"
+  }
+}

@@ -143,3 +143,15 @@ export async function findSiteBySlug(
   );
   return rows[0] ?? null;
 }
+
+/**
+ * Every registry row, `site_id` order. Added for step 9's coverage-drift report
+ * (PRD §3.1), which has to compare the whole registry against its liveness history —
+ * a one-site lookup cannot answer "what is deployed but unmonitored across the estate".
+ */
+export async function listSites(db: Queryable): Promise<SiteRow[]> {
+  const { rows } = await db.query<SiteRow>(
+    `SELECT ${COLUMNS} FROM sites ORDER BY site_id`,
+  );
+  return rows;
+}

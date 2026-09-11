@@ -22,6 +22,11 @@ import {
   exitCodeForSiteReport,
 } from "./exit.js";
 import { formatNoteOutcome, runNoteCommand } from "./note-command.js";
+import {
+  formatSyncOutcome,
+  runRegistryReportCommand,
+  runRegistrySyncCommand,
+} from "./registry-command.js";
 import { formatReport } from "./report.js";
 import { runReportCommand } from "./report-command.js";
 import { runCrawlCommand, type CrawlCommandDeps } from "./run.js";
@@ -47,6 +52,11 @@ Usage:
   link-graph note <site-id> <kind> <subject> --intentional|--acknowledged -m <note>
                                [--by <who>]
                                record one judgement of one finding
+  link-graph registry sync    clone deployment-configurations, derive the estate,
+                               merge the curation overlay, upsert sites, probe
+                               liveness (step 9)
+  link-graph registry report  print the coverage-drift table: deployed but
+                               unmonitored, and configured but dead
   link-graph --help
 
 <kind> is orphan or broken_internal_link. <subject> is the page the finding is about —
@@ -64,9 +74,8 @@ Installed as a workspace binary. The two invocations verified in a fresh checkou
   npm run link-graph -- crawl <site-id>
 A bare "link-graph" additionally needs tsx on PATH.
 
-<site-id> is a sites.site_id slug. Nothing populates that table yet (step 9 of
-docs/03-implementation-plan.md); until it does, insert a row with upsertSite from
-@link-graph/db.
+<site-id> is a sites.site_id slug. \`link-graph registry sync\` populates that table
+from deployment-configurations (step 9).
 
 The database is DATABASE_URL, defaulting to the local docker-compose Postgres.
 
@@ -122,6 +131,15 @@ export async function main(
       const report = await runReportCommand(pool, invocation.siteId);
       io.out(formatSiteReport(report, now()));
       return exitCodeForSiteReport(report);
+    }
+    if (invocation.kind === "registry-sync") {
+      const outcome = await runRegistrySyncCommand(pool);
+      io.out(formatSyncOutcome(outcome));
+      return EXIT.ok;
+    }
+    if (invocation.kind === "registry-report") {
+      io.out(await runRegistryReportCommand(pool));
+      return EXIT.ok;
     }
     if (invocation.kind === "note") {
       const outcome = await runNoteCommand(

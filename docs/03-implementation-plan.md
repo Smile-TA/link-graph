@@ -864,13 +864,80 @@ Shared `external_urls` table with a TTL, so a destination linked from 40 sites i
 fetched once. Integration test against the fixture server; `unverified` for hosts that
 block us, never a false "broken".
 
-## Step 9 — `registry`: liveness — S
+## Step 9 — `registry`: liveness — S — **done**
 
 Shallow-clone deployment-configurations, parse `ingress.entries[].hosts[].hostname`,
 read `image.tag` for release attribution. Liveness probe per PRD §3.1. First real
 output: the coverage-drift report — deployed but unmonitored, and configured but dead
 (`agents.integrity.com` has no DNS; `integritymedicarehelpline.com` refuses
 connections).
+
+**Done.** 526 unit tests (524 before this step's fix, up from 519 pre-step-9) + 170
+integration, lint and Prettier clean. `packages/registry` — `deriveSites`,
+`mergeRegistry`, `probeLiveness`, `classifyDrift`, `syncRegistry` — plus `listSites` in
+`packages/db` and `registry sync` / `registry report` on the CLI. No new migration:
+`001_sites.sql`'s `sites` and `registry_health` tables already held everything this step
+needed to write.
+
+**A real clone, not a fixture.** `git clone --depth=1` against the live
+`deployment-configurations` (SHA `55c0457…`) found **199** app directories, **195** with
+a prod `values.yaml`, **163** carrying at least one prod hostname across **307**
+hostnames on **140** multi-host apps — close to, and visibly drifted from, PRD §3's
+2026-08-18 figures (312/145/143), which is the estate moving, not a measurement error.
+The 36 apps with zero prod hostnames split cleanly into variant directories (`-v2`,
+dated, `-traefik-canary`) and platform utilities (backup/restore, vault, Wordfence
+tooling) — the curation overlay (`packages/registry/src/curation.json`) excludes exactly
+these by app directory name, checked in and reviewed like code rather than mutated in a
+table.
+
+**`link-graph registry sync` run for real** against the dev database: 199 app
+directories derived, 163 became sites rows (36 excluded by curation), all 163 probed, in
+4m22s, exit 0. The liveness probe (PRD §3.1: DNS → serves → platform signature →
+`/version.txt`) measured **157 dnsOk, 6 no-DNS, 152 serving, 106 with the full
+Apache/2.4.68 + CloudFront signature, 133 with a real `/version.txt`** across all 163.
+
+**The first coverage-drift report reproduces PRD §3.1's own two examples.**
+`link-graph registry report`: **0 deployed-but-unmonitored, 57 configured-but-dead**,
+and the 57 include `agents.integrity.com` (no DNS) and `integritymedicarehelpline.com`
+(connection refused) by name — the exact pair the PRD cites, arrived at independently
+through this step's own probe rather than copied from the document.
+
+**DNS and HTTP are both injected** (`LivenessDeps`), so `liveness.test.ts`'s unit tests
+run a fake resolver/fetcher; `sync.int.test.ts` re-probes **three** real hosts
+(`403bplan.net`, `advisorsib.com`, `agentcore.com`) drawn from the real clone rather than
+sweeping the whole estate in a test — this project's convention since step 6. All three
+came back fully live with real `/version.txt` bodies.
+
+**A real bug, found by review rather than left as a footnote: `syncRegistry` was
+silently clobbering a site's resolved `truthSource` on every re-run.** `mergeSite` has
+no database access, so it always produced `truthSource: null` for `upsertSite`; running
+`registry sync` after a `crawl` had already resolved a site's truth source (step 5/6)
+would reset it to null, undoing that work with no error and no log line — exactly the
+silent-failure shape engineering guide §1 rules out. Fixed here: `syncRegistry` now
+reads the existing row via `findSiteBySlug` before upserting and preserves its
+`truthSource` when one is already recorded, rather than deferring the fix to step 10 on
+the reasoning that "something else will read it eventually." Pinned by two new unit
+tests in `sync.test.ts` against a fully faked database, clone, and probe — one asserting
+a re-sync leaves an existing `'sitemap'` alone, one asserting a genuinely new site still
+gets `null` rather than a fabricated value.
+
+**A second review pass fixed two smaller things rather than filing them as findings.**
+`registryDriftReport` queried `registry_health` once per site (an N+1 that only mattered
+at estate scale); it now reads the newest probe per site in one query via
+`listLatestRegistryHealth`'s `SELECT DISTINCT ON (site_id) … ORDER BY site_id,
+checked_at DESC`, pinned by a new `report.int.test.ts` that plants an older "live" row
+and a newer "dead" one for the same site and asserts the newer one wins. And
+`packages/registry`'s `package.json` had declared a dependency on `@link-graph/core`
+that nothing in the package imports — removed.
+
+**Left undone:** `resolveDns` has no explicit timeout and visibly stalled on at least
+one host during the real run before failing over — never hung indefinitely, but the wall
+time is at the mercy of the OS resolver's retry schedule rather than a declared ceiling,
+unlike `fetchUrl`'s 10s `AbortSignal`. `registry sync` probes all 163 sites sequentially
+(one host at a time, 4m22s); safe under PRD §5.1's per-host limit but un-parallelized,
+which is reasonable step 10 scheduler work rather than this step's. No per-site filter —
+every run is whole-estate, which is fine at 163 sites and worth revisiting if the
+estate's growth makes a full sync too slow to run on demand.
 
 ## Step 10 — `scheduler` + queues — M
 

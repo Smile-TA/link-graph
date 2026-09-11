@@ -45,3 +45,19 @@ export async function listRegistryHealth(
   );
   return rows;
 }
+
+/**
+ * The newest `registry_health` row per site, across the whole registry in one query —
+ * `DISTINCT ON` rather than `listRegistryHealth` called once per site, so the
+ * coverage-drift report (step 9) makes one round trip instead of one per site.
+ */
+export async function listLatestRegistryHealth(
+  db: Queryable,
+): Promise<RegistryHealthInput[]> {
+  const { rows } = await db.query<RegistryHealthInput>(
+    `SELECT DISTINCT ON (site_id) ${COLUMNS}
+     FROM registry_health
+     ORDER BY site_id, checked_at DESC`,
+  );
+  return rows;
+}

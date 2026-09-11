@@ -1,0 +1,13 @@
+{
+  "name": "@link-graph/registry",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@link-graph/db": "*",
+    "undici": "^7.29.0",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {}
+}

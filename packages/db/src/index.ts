@@ -27,6 +27,7 @@ export {
   upsertSite,
   findSiteById,
   findSiteBySlug,
+  listSites,
   isInventory,
   CRAWLER_MODES,
   CRAWL_SCOPES,
@@ -39,7 +40,11 @@ export type {
   SiteRow,
   TruthSource,
 } from "./repo/sites.js";
-export { insertRegistryHealth, listRegistryHealth } from "./repo/registry-health.js";
+export {
+  insertRegistryHealth,
+  listRegistryHealth,
+  listLatestRegistryHealth,
+} from "./repo/registry-health.js";
 export type { RegistryHealthInput } from "./repo/registry-health.js";
 export {
   insertCrawl,

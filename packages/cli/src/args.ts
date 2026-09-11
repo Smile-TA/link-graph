@@ -28,12 +28,15 @@ export type Invocation =
       readonly by: string | null;
     }
   | { readonly kind: "report"; readonly siteId: string }
+  | { readonly kind: "registry-sync" }
+  | { readonly kind: "registry-report" }
   | { readonly kind: "help" }
   | { readonly kind: "usage-error"; readonly problem: string };
 
 const HINT =
   "usage: link-graph crawl <site-id> | note <site-id> <kind> <subject> " +
-  "--intentional|--acknowledged -m <note> | report <site-id> (see --help)";
+  "--intentional|--acknowledged -m <note> | report <site-id> | " +
+  "registry sync|report (see --help)";
 
 /**
  * The state flags are generated from the vocabulary rather than written out, so a third
@@ -58,6 +61,7 @@ export function parseArgs(argv: readonly string[]): Invocation {
   if (command === undefined) return usageError("no command given");
   if (command === "crawl" || command === "report") return oneSite(command, argv);
   if (command === "note") return note(argv);
+  if (command === "registry") return registry(argv);
   return usageError(`unknown command ${quote(command)}`);
 }
 
@@ -179,6 +183,23 @@ function note(argv: readonly string[]): Invocation {
     );
   }
   return { kind: "note", siteId, finding, subject, state, note: message, by };
+}
+
+/**
+ * `registry sync` and `registry report` (step 9): no site id, no options — the whole
+ * estate, every time. Same refusal shape as `oneSite`: an extra word is a mistake to
+ * name, not a value to drop.
+ */
+function registry(argv: readonly string[]): Invocation {
+  const [, sub, extra] = argv;
+  if (sub === undefined) return usageError("registry needs sync or report");
+  if (sub !== "sync" && sub !== "report") {
+    return usageError(`unknown registry subcommand ${quote(sub)} — sync or report`);
+  }
+  if (extra !== undefined) {
+    return usageError(`unexpected argument ${quote(extra)} — registry ${sub} takes none`);
+  }
+  return { kind: sub === "sync" ? "registry-sync" : "registry-report" };
 }
 
 function isFindingKind(value: string): value is FindingKind {
