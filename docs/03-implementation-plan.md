@@ -939,11 +939,38 @@ which is reasonable step 10 scheduler work rather than this step's. No per-site 
 every run is whole-estate, which is fine at 163 sites and worth revisiting if the
 estate's growth makes a full sync too slow to run on demand.
 
-## Step 10 — `scheduler` + queues — M
+## Step 10 — `scheduler` + queues — M — **done**
 
 Redis, three queues, one worker image. Weekly full crawl per site. **Jenkins does
 nothing** (PRD §8). Compose grows to its full shape here — the first step where it has
 to.
+
+**Done.** `packages/scheduler` (BullMQ + ioredis), `Dockerfile.worker`, and a `redis`
+service in `docker-compose.yml`. 8 new unit tests + 1 integration test against a real
+Redis (541/172 total), lint and Prettier clean.
+
+**Two queues, not the diagram's three.** `analyse` never runs on its own anywhere in
+this codebase — step 7's `runCrawlCommand` always follows a crawl with its analysis in
+the same call, and nothing needed to retry one without the other. A queue with no
+distinct job to carry would be isolation nobody uses, so `crawl` carries both and
+`linkcheck` stays separate, because it genuinely is: a different external host per job,
+its own TTL-driven due set (step 8), and a failure that must not block or repeat the
+crawl that fed it.
+
+**`packages/cli` gained an `index.ts`.** The scheduler's crawl job is `runCrawlCommand`
+(step 7) itself, not a second implementation of the crawl → analyse pipeline — `bin.ts`
+has top-level `await` and cannot be the library entry point, so the reusable pieces
+(`runCrawlCommand`, `CrawlCommandDeps`, `CrawlReport`) now have a side-effect-free export.
+
+**"Jenkins does nothing" is `upsertJobScheduler`, not a cron trigger anywhere else.**
+The weekly schedule is registered idempotently on every worker start-up (`bin.ts`), keyed
+per site, so nothing external has to fire it and re-registering the same sites replaces
+rather than duplicates each one.
+
+**Left undone, deliberately:** no `resolveDns`-style timeout tuning or horizontal
+scaling — one process runs both queues, and PRD §8 sizes this as a single-VM Compose
+stack; `pool.on("error")` still only covers idle clients (step 6/9's open item); staging
+crawls stay out of the schedule (step 14).
 
 ## Step 11 — `api` — M
 

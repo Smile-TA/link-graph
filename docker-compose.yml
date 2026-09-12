@@ -1,6 +1,7 @@
-# Postgres only, on purpose. Redis and the workers arrive at step 10, the API at
-# step 11 and Astro at step 12 — infrastructure arrives when something needs it
-# (implementation plan, ordering rule 3).
+# Postgres, Redis, and the worker (PRD §8). The API at step 11 and Astro at step 12
+# still arrive later — infrastructure arrives when something needs it (implementation
+# plan, ordering rule 3), and step 10 (the scheduler's queues) is the thing that needed
+# Redis and a place to run the worker image.
 #
 #   docker compose up -d --wait     then  npm run test:integration
 #
@@ -15,6 +16,16 @@
 # unset, and an override here that the fallback could not see would point the
 # integration suite at a different server while it stayed green.
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
   postgres:
     image: postgres:18-alpine
     environment:
@@ -37,6 +48,19 @@ services:
       interval: 1s
       timeout: 3s
       retries: 30
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      DATABASE_URL: postgres://link_graph:link_graph@postgres:5432/link_graph
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   pgdata:

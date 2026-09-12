@@ -1,0 +1,17 @@
+# The worker image (PRD §8): both queues (crawl, linkcheck) in one process, started by
+# packages/scheduler/src/bin.ts. Playwright is a separate, heavier image — nothing here
+# installs browsers — and the lychee static binary is vendored in via the same script
+# used locally, so it is fetched and sha256-verified at build time rather than trusted
+# from a base image.
+FROM node:22-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY packages ./packages
+RUN npm ci
+RUN scripts/fetch-lychee.sh
+
+FROM node:22-slim
+WORKDIR /app
+COPY --from=build /app /app
+ENV LYCHEE_BIN=/app/vendor/lychee/lychee
+ENTRYPOINT ["npx", "tsx", "packages/scheduler/src/bin.ts"]
