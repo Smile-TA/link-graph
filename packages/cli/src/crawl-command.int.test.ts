@@ -15,10 +15,12 @@
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
+  countCrawlRows,
   createTempDatabase,
   databaseUrl,
   findCrawlMetrics,
   findSiteBySlug,
+  listCrawlDiffs,
   runMigrations,
   upsertSite,
   type SiteInput,
@@ -241,6 +243,34 @@ describe("link-graph crawl", () => {
       notInTruthSource: 0,
       undetectable: 0,
     });
+  });
+
+  /**
+   * Step 13: a second crawl of the same, unchanged site diffs cleanly against the first
+   * and keeps both crawls' row-level detail, because two is nowhere near the 12-crawl
+   * retention window (PRD §7). The content here never changes between runs, so the
+   * diff being empty is the correct answer, not a false negative — what this proves is
+   * that the wiring runs end to end without turning a second successful crawl into a
+   * failed command.
+   */
+  it("diffs against the previous crawl and keeps both under the retention window", async () => {
+    const site = await makeSite();
+    const first = await run(site, await serve(serve403bplanSite));
+    expect(first.code).toBe(EXIT.ok);
+    const firstCrawlId = await crawlIdOf(site);
+
+    const second = await run(site, await serve(serve403bplanSite));
+    expect(second.code).toBe(EXIT.ok);
+    const { rows } = await db.pool.query<{ id: number }>(
+      `SELECT id FROM crawls WHERE site_id = $1 ORDER BY id`,
+      [site.id],
+    );
+    const secondCrawlId = rows[1]?.id;
+    if (secondCrawlId === undefined) throw new Error("expected two crawls");
+
+    expect(await listCrawlDiffs(db.pool, secondCrawlId)).toEqual([]);
+    expect((await countCrawlRows(db.pool, firstCrawlId)).pages).toBe(13);
+    expect((await countCrawlRows(db.pool, secondCrawlId)).pages).toBe(13);
   });
 
   /**

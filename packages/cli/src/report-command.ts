@@ -18,12 +18,14 @@ import {
   findCrawlMetrics,
   findLatestCompleteCrawl,
   listBrokenLinkFindings,
+  listDiffEventsForSubjects,
   listOrphanFindings,
 } from "@link-graph/db";
 import {
   brokenLinkFinding,
   bucketFindings,
   orphanFinding,
+  reappearedSubjects,
   reviewsFor,
 } from "@link-graph/review";
 import type { Pool } from "pg";
@@ -52,21 +54,30 @@ export async function runReportCommand(pool: Pool, siteId: string): Promise<Site
     );
   }
 
-  // One wave rather than five: none of these six reads depends on another, and the
+  // One wave rather than five: none of these five reads depends on another, and the
   // broken-link aggregate walks every internal link of the crawl (127,845 of them on
   // integrity.com), so awaiting them in sequence makes the command's wall time their
   // sum. They take the pool, not one client, so `pg` runs them on separate connections.
   const [counts, orphanRows, brokenRows, orphanReviews, brokenReviews] =
     await Promise.all([
       countCrawlRows(pool, crawl.id),
-      // Listed whatever the count says, so that a crawl whose classified pages and whose
-      // metrics row disagree is refused by `siteReportProblem` below rather than
+      // Listed whatever the count says, so that a crawl whose classified pages and
+      // whose metrics row disagree is refused by `siteReportProblem` below rather than
       // reconciled here by dropping one of the two.
       listOrphanFindings(pool, crawl.id),
       listBrokenLinkFindings(pool, crawl.id),
       reviewsFor(pool, site.id, "orphan"),
       reviewsFor(pool, site.id, "broken_internal_link"),
     ]);
+
+  // A second, dependent wave: only a reviewed subject can ever need its diff history
+  // (step 13, PRD §7.1), so this is bounded by review count rather than by the site's
+  // whole crawl_diffs history, which `crawl_diffs` — unlike `pages`/`links` — keeps
+  // indefinitely and would otherwise grow every report's cost with the site's age.
+  const [orphanDiffEvents, brokenDiffEvents] = await Promise.all([
+    listDiffEventsForSubjects(pool, site.id, "orphan", [...orphanReviews.keys()]),
+    listDiffEventsForSubjects(pool, site.id, "broken", [...brokenReviews.keys()]),
+  ]);
 
   const report: SiteReport = {
     siteId: site.siteId,
@@ -82,8 +93,16 @@ export async function runReportCommand(pool: Pool, siteId: string): Promise<Site
       wasThrottled: crawl.wasThrottled,
     },
     metrics,
-    orphans: bucketFindings(orphanRows.map(orphanFinding), orphanReviews),
-    brokenLinks: bucketFindings(brokenRows.map(brokenLinkFinding), brokenReviews),
+    orphans: bucketFindings(
+      orphanRows.map(orphanFinding),
+      orphanReviews,
+      reappearedSubjects(orphanReviews, orphanDiffEvents),
+    ),
+    brokenLinks: bucketFindings(
+      brokenRows.map(brokenLinkFinding),
+      brokenReviews,
+      reappearedSubjects(brokenReviews, brokenDiffEvents),
+    ),
   };
   const problem = siteReportProblem(report);
   // Nothing downstream can recover from two numbers for one question, and printing

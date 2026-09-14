@@ -18,6 +18,8 @@ import { build403bplanCrawl, type FixtureCrawlJson } from "@link-graph/analyse";
 import {
   createTempDatabase,
   findSiteBySlug,
+  insertCompleteCrawl,
+  insertCrawlDiff,
   listFindingReviews,
   loadFixture,
   parseCrawlFixture,
@@ -226,6 +228,64 @@ describe("link-graph note + report", () => {
       "Orphans        4 — 3 new, 0 changed since review, 1 reviewed",
     );
     expect(report.stdout).toContain("a leftover test page");
+  });
+
+  /**
+   * **Step 13's own gap, closed.** PRD §7.1 left this open: a finding that disappears
+   * and later returns must not silently reactivate its old review. Unlike the previous
+   * test — where the finding was continuously present and only the crawl row that
+   * recorded it was deleted — this one plants `crawl_diffs` history that genuinely says
+   * the subject resolved and then reappeared after the review was written, and asserts
+   * the report ranks it as `new` rather than reusing the stale judgement.
+   */
+  it("re-ranks a reviewed finding as new once history shows it disappeared and came back", async () => {
+    const site = newSite();
+    const subject = "/test-pay-button/";
+    const crawlId = await crawlOf(site);
+    expect((await noteOrphan(site, subject, "reviewed once")).code).toBe(EXIT.ok);
+
+    const siteRow = await findSiteBySlug(db.pool, site);
+    if (siteRow === null) throw new Error(`no site row for ${site}`);
+    const siteId: number = siteRow.id;
+    const url = `${HOST}${subject}`;
+
+    async function laterCrawl(finishedAt: string): Promise<number> {
+      const crawl = await insertCompleteCrawl(db.pool, siteId, new Date(finishedAt));
+      return crawl.id;
+    }
+
+    // Both events dated after NOW, which is when the review above was written.
+    const resolvedCrawl = await laterCrawl("2026-09-05T00:00:00.000Z");
+    await insertCrawlDiff(db.pool, {
+      fromCrawlId: crawlId,
+      toCrawlId: resolvedCrawl,
+      kind: "orphan_resolved",
+      url,
+      detail: null,
+    });
+    const appearedCrawl = await laterCrawl("2026-09-10T00:00:00.000Z");
+    await insertCrawlDiff(db.pool, {
+      fromCrawlId: resolvedCrawl,
+      toCrawlId: appearedCrawl,
+      kind: "orphan_appeared",
+      url,
+      detail: null,
+    });
+
+    // The crawl `report` actually reads: the finding is present again. `crawlOf`'s
+    // fixture always stamps `finished_at` as the same fixed instant (guide §4.4), so
+    // it is nudged later here — otherwise `findLatestCompleteCrawl` would keep
+    // reading the synthetic `appearedCrawl` above, which has no `crawl_metrics` row.
+    const finalCrawl = await crawlOf(site);
+    await db.pool.query(`UPDATE crawls SET finished_at = $2 WHERE id = $1`, [
+      finalCrawl,
+      new Date("2026-09-15T00:00:00.000Z"),
+    ]);
+    const report = await run(["report", site]);
+    if (report.code !== EXIT.ok) throw new Error(report.stderr);
+    expect(report.stdout).toContain(
+      "Orphans        4 — 4 new, 0 changed since review, 0 reviewed",
+    );
   });
 
   /**

@@ -127,14 +127,63 @@ export async function findLatestCompleteCrawl(
   db: Queryable,
   siteId: number,
 ): Promise<CrawlRow | null> {
+  return findPreviousCompleteCrawl(db, siteId, null);
+}
+
+/**
+ * The complete crawl immediately before `beforeCrawlId`, for the same site — what step
+ * 13's diff is computed against. `null` `beforeCrawlId` means "no upper bound", which is
+ * exactly `findLatestCompleteCrawl`'s question, so that function is this one applied to
+ * the whole history rather than a second copy of the same predicate.
+ *
+ * `null` for a site's first crawl, which is not an error: `diffCrawls(null, …)` is
+ * defined as "nothing to report".
+ */
+export async function findPreviousCompleteCrawl(
+  db: Queryable,
+  siteId: number,
+  beforeCrawlId: number | null,
+): Promise<CrawlRow | null> {
   const { rows } = await db.query<CrawlRow>(
     `SELECT ${COLUMNS} FROM crawls
      WHERE site_id = $1 AND status = 'complete' AND env = 'prod'
+       AND ($2::bigint IS NULL OR id < $2)
      ORDER BY finished_at DESC NULLS LAST, id DESC
      LIMIT 1`,
-    [siteId],
+    [siteId, beforeCrawlId],
   );
   return rows[0] ?? null;
+}
+
+/**
+ * Every complete crawl of this site, newest first — what step 13's retention slices
+ * (`crawlsToPrune`, `@link-graph/diffs`) to decide which ones lose their page/link rows.
+ */
+export async function listCompleteCrawlIds(
+  db: Queryable,
+  siteId: number,
+): Promise<number[]> {
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT id FROM crawls
+     WHERE site_id = $1 AND status = 'complete' AND env = 'prod'
+     ORDER BY finished_at DESC NULLS LAST, id DESC`,
+    [siteId],
+  );
+  return rows.map((row) => row.id);
+}
+
+/**
+ * Drops a crawl's row-level detail (PRD §7 retention): its `pages` rows, which cascades
+ * to their `links` rows (`002_crawls.sql`). `crawls`, `crawl_metrics` and `crawl_diffs`
+ * reference neither and are untouched, so the crawl's rollup and its place in later
+ * diffs survive the prune.
+ */
+export async function pruneCrawlDetail(
+  db: Queryable,
+  crawlIds: readonly number[],
+): Promise<void> {
+  if (crawlIds.length === 0) return;
+  await db.query(`DELETE FROM pages WHERE crawl_id = ANY($1)`, [crawlIds]);
 }
 
 export interface CrawlOutcome {

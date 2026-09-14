@@ -20,9 +20,16 @@
 import { analyse } from "@link-graph/analyse";
 import { crawl } from "@link-graph/crawl";
 import type { CrawlDeps } from "@link-graph/crawl";
+import { crawlsToPrune, diffCrawls } from "@link-graph/diffs";
 import {
+  findPreviousCompleteCrawl,
+  insertCrawlDiff,
+  listBrokenLinkFindings,
+  listCompleteCrawlIds,
   listOrphanFindings,
+  pruneCrawlDetail,
   upsertSite,
+  withTransaction,
   type SiteRow,
   type TruthSource,
 } from "@link-graph/db";
@@ -88,10 +95,18 @@ export async function runCrawlCommand(
   // reads the same rows, and "this crawl's orphan rows" defined twice is exactly the
   // disagreement `orphanListProblem` exists to catch. It also stops fetching all 2,454
   // page rows of a large crawl to keep four of them.
-  const orphans = (await listOrphanFindings(pool, result.crawlId)).map((page) => ({
+  const orphanRows = await listOrphanFindings(pool, result.crawlId);
+  const orphans = orphanRows.map((page) => ({
     urlNormalized: page.urlNormalized,
     statusCode: page.statusCode,
   }));
+
+  // Step 13: diff against this site's last complete crawl, then prune row-level detail
+  // beyond the 12-crawl retention window (PRD §7). Two unrelated facts — what changed,
+  // and how much history to keep — so two functions, run one after the other only
+  // because retention has nothing to prune until this crawl's row exists.
+  await recordCrawlDiff(pool, crawled.id, result.crawlId, orphanRows);
+  await pruneRetention(pool, crawled.id);
 
   const report: CrawlReport = {
     siteId: site.siteId,
@@ -121,6 +136,62 @@ export async function runCrawlCommand(
   // either one would be picking a winner at random.
   if (problem !== null) throw new Error(`crawl ${result.crawlId}: ${problem}`);
   return report;
+}
+
+/**
+ * Step 13: what changed since this site's previous complete crawl. A no-op on the
+ * site's first crawl (`findPreviousCompleteCrawl` returns `null`).
+ *
+ * `orphanRows` is the current crawl's already-fetched list, not re-queried — the same
+ * "don't ask the same question twice" reasoning `orphans` above follows. The previous
+ * crawl's findings and both crawls' broken-link lists are read fresh, because nothing
+ * upstream needed them.
+ */
+async function recordCrawlDiff(
+  pool: Pool,
+  siteId: number,
+  crawlId: number,
+  orphanRows: Awaited<ReturnType<typeof listOrphanFindings>>,
+): Promise<void> {
+  const previous = await findPreviousCompleteCrawl(pool, siteId, crawlId);
+  if (previous === null) return;
+
+  const [previousOrphans, currentBroken, previousBroken] = await Promise.all([
+    listOrphanFindings(pool, previous.id),
+    listBrokenLinkFindings(pool, crawlId),
+    listBrokenLinkFindings(pool, previous.id),
+  ]);
+  const diffs = diffCrawls({
+    previousOrphans: previousOrphans.map((page) => page.urlNormalized),
+    currentOrphans: orphanRows.map((page) => page.urlNormalized),
+    previousBroken: previousBroken.map((link) => link.urlNormalized),
+    currentBroken: currentBroken.map((link) => link.urlNormalized),
+    previousTag: previous.deployedTag,
+    // No caller resolves `image.tag` onto a crawl row yet — `crawl()` always writes
+    // `deployedTag: null` (packages/crawl/src/crawl.ts) — so this is always null in
+    // practice today.
+    currentTag: null,
+  });
+  // One transaction, not one write per diff: a run that fails partway through a
+  // multi-hundred-row diff must not leave this crawl pair's history half recorded —
+  // the next report would then read a diff that undercounts what actually changed.
+  await withTransaction(pool, async (tx) => {
+    for (const diff of diffs) {
+      await insertCrawlDiff(tx, {
+        fromCrawlId: previous.id,
+        toCrawlId: crawlId,
+        kind: diff.kind,
+        url: diff.url,
+        detail: diff.detail,
+      });
+    }
+  });
+}
+
+/** Step 13's retention: drop row-level detail beyond the 12-crawl window (PRD §7). */
+async function pruneRetention(pool: Pool, siteId: number): Promise<void> {
+  const completeCrawlIds = await listCompleteCrawlIds(pool, siteId);
+  await pruneCrawlDetail(pool, crawlsToPrune(completeCrawlIds));
 }
 
 /**

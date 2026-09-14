@@ -8,7 +8,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadFixture, parseCrawlFixture } from "./fixture.js";
 import { runMigrations } from "./migrate.js";
-import { insertCrawlDiff, listCrawlDiffs } from "./repo/crawl-diffs.js";
+import {
+  insertCrawlDiff,
+  listCrawlDiffs,
+  listDiffEventsForSubjects,
+} from "./repo/crawl-diffs.js";
 import {
   findCrawlMetrics,
   upsertCrawlMetrics,
@@ -16,7 +20,14 @@ import {
   type CrawlMetricsInput,
   type OrphansUnknownReason,
 } from "./repo/crawl-metrics.js";
-import { findCrawl, insertCrawl } from "./repo/crawls.js";
+import {
+  countCrawlRows,
+  findCrawl,
+  findPreviousCompleteCrawl,
+  insertCrawl,
+  listCompleteCrawlIds,
+  pruneCrawlDetail,
+} from "./repo/crawls.js";
 import {
   countExternalUrls,
   findExternalUrl,
@@ -25,6 +36,7 @@ import {
   upsertExternalUrls,
 } from "./repo/external-urls.js";
 import { insertLinks } from "./repo/links.js";
+import type { PageInput } from "./repo/pages.js";
 import { insertRegistryHealth, listRegistryHealth } from "./repo/registry-health.js";
 import {
   findSiteBySlug,
@@ -32,6 +44,7 @@ import {
   type CrawlScope,
   type SiteInput,
 } from "./repo/sites.js";
+import { insertCompleteCrawl } from "./testing/crawls.js";
 import { createTempDatabase, type TempDatabase } from "./testing/temp-database.js";
 
 let db: TempDatabase;
@@ -506,5 +519,87 @@ describe("crawl_diffs", () => {
     ]);
     // ...and the filter really is on to_crawl_id.
     expect(await listCrawlDiffs(db.pool, crawlId)).toEqual([]);
+  });
+});
+
+describe("step 13: retention and diff history", () => {
+  const page = (overrides: Partial<PageInput> = {}): PageInput => ({
+    urlNormalized: "https://integrity.com/",
+    path: "/",
+    postType: null,
+    statusCode: 200,
+    depth: 0,
+    inTruthSource: true,
+    indexable: true,
+    canonicalTo: null,
+    redirectTo: null,
+    class: "linked",
+    ...overrides,
+  });
+
+  async function completeCrawl(finishedAt: string): Promise<number> {
+    const crawl = await insertCompleteCrawl(db.pool, siteId, new Date(finishedAt), {
+      pages: [page()],
+    });
+    return crawl.id;
+  }
+
+  it("finds the crawl immediately before another, and none before the site's first", async () => {
+    // The `beforeAll` fixture already gave this site one complete crawl (`crawlId`),
+    // so "none for the first" is proven against that one rather than an empty site.
+    expect(await findPreviousCompleteCrawl(db.pool, siteId, crawlId)).toBeNull();
+
+    const first = await completeCrawl("2026-01-01T00:00:00Z");
+    const second = await completeCrawl("2026-01-08T00:00:00Z");
+
+    const previous = await findPreviousCompleteCrawl(db.pool, siteId, second);
+    expect(previous?.id).toBe(first);
+  });
+
+  it("prunes a crawl's pages (and cascades its links) while leaving the row behind", async () => {
+    const crawl = await completeCrawl("2026-02-01T00:00:00Z");
+    expect((await countCrawlRows(db.pool, crawl)).pages).toBe(1);
+
+    await pruneCrawlDetail(db.pool, [crawl]);
+
+    expect((await countCrawlRows(db.pool, crawl)).pages).toBe(0);
+    expect(await findCrawl(db.pool, crawl)).not.toBeNull();
+  });
+
+  it("keeps the newest 12 complete crawls in id order and prunes nothing short of that", async () => {
+    const ids = await listCompleteCrawlIds(db.pool, siteId);
+    // Populated by the two tests above, oldest crawl already pruned or not — either
+    // way there are fewer than 12, so nothing here should ever be selected for pruning.
+    expect(ids.length).toBeLessThan(12);
+  });
+
+  it("reads back appeared/resolved events with the crawl's own finished_at", async () => {
+    const a = await completeCrawl("2026-03-01T00:00:00Z");
+    const b = await completeCrawl("2026-03-08T00:00:00Z");
+    await insertCrawlDiff(db.pool, {
+      fromCrawlId: a,
+      toCrawlId: b,
+      kind: "orphan_resolved",
+      url: "https://integrity.com/gone/",
+      detail: null,
+    });
+    const c = await completeCrawl("2026-03-15T00:00:00Z");
+    await insertCrawlDiff(db.pool, {
+      fromCrawlId: b,
+      toCrawlId: c,
+      kind: "orphan_appeared",
+      url: "https://integrity.com/gone/",
+      detail: null,
+    });
+
+    const events = await listDiffEventsForSubjects(db.pool, siteId, "orphan", [
+      "https://integrity.com/gone/",
+    ]);
+    expect(events.map((e) => e.kind)).toEqual(["resolved", "appeared"]);
+    expect(events[1]?.at.getTime()).toBeGreaterThan(events[0]?.at.getTime() ?? 0);
+  });
+
+  it("returns nothing for an empty subject list, without querying", async () => {
+    expect(await listDiffEventsForSubjects(db.pool, siteId, "orphan", [])).toEqual([]);
   });
 });

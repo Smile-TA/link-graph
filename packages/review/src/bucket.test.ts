@@ -163,4 +163,21 @@ describe("countStates", () => {
     );
     expect(countStates(bucketed)).toEqual({ intentional: 0, acknowledged: 0 });
   });
+
+  /**
+   * PRD §7.1's step-13 gap: a finding that disappeared and came back must not silently
+   * reactivate its old review. Even with matching evidence (which would otherwise read
+   * `reviewed`), a subject in `reappeared` is forced to `new` with no review attached —
+   * a reader must judge it again rather than inherit a verdict from before it left.
+   */
+  it("treats a reappeared subject as new even when its evidence still matches", () => {
+    const first = FINDINGS[0];
+    if (first === undefined) throw new Error("no findings");
+    const bucketed = bucketFindings(
+      FINDINGS,
+      reviewsOf(review(first)),
+      new Set([first.subject]),
+    );
+    expect(bucketed[0]).toMatchObject({ bucket: "new", review: null });
+  });
 });

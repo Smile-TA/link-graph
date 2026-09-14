@@ -12,6 +12,7 @@
     "@link-graph/core": "*",
     "@link-graph/crawl": "*",
     "@link-graph/db": "*",
+    "@link-graph/diffs": "*",
     "@link-graph/registry": "*",
     "@link-graph/review": "*",
     "@link-graph/truth": "*",

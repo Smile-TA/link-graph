@@ -53,6 +53,9 @@ export {
   finishCrawl,
   reopenCrawl,
   countCrawlRows,
+  findPreviousCompleteCrawl,
+  listCompleteCrawlIds,
+  pruneCrawlDetail,
   CRAWL_ENVS,
   CRAWL_STATUSES,
 } from "./repo/crawls.js";
@@ -106,8 +109,12 @@ export {
   countAnalysedLinks,
 } from "./repo/analysis.js";
 export type { LinkAnalysisCounts, PageAnalysisFact } from "./repo/analysis.js";
-export { insertCrawlDiff, listCrawlDiffs } from "./repo/crawl-diffs.js";
-export type { CrawlDiffInput } from "./repo/crawl-diffs.js";
+export {
+  insertCrawlDiff,
+  listCrawlDiffs,
+  listDiffEventsForSubjects,
+} from "./repo/crawl-diffs.js";
+export type { CrawlDiffInput, DiffEventRow } from "./repo/crawl-diffs.js";
 export { listOrphanFindings, listBrokenLinkFindings } from "./repo/findings.js";
 export type { BrokenLinkFinding, OrphanFinding } from "./repo/findings.js";
 // Test scaffolding, exported for the reason `createTempDatabase` is (guide §4.3): the
@@ -115,6 +122,7 @@ export type { BrokenLinkFinding, OrphanFinding } from "./repo/findings.js";
 // this row, and three builders for one nine-column row is three things to edit per
 // column.
 export { someFindingReview } from "./testing/reviews.js";
+export { insertCompleteCrawl } from "./testing/crawls.js";
 export {
   findFindingReview,
   listFindingReviews,

@@ -4,3 +4,4 @@ export { bucketFindings, countBuckets, countStates, REVIEW_BUCKETS } from "./buc
 export type { Finding, ReviewBucket, ReviewedFinding } from "./bucket.js";
 export { brokenLinkFinding, orphanFinding } from "./findings.js";
 export { reviewsFor } from "./reviews.js";
+export { reappearedSubjects } from "./reappear.js";

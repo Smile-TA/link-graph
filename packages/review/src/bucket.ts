@@ -45,16 +45,26 @@ export interface ReviewedFinding<E extends FindingEvidence = FindingEvidence> {
  * A review with no matching finding is silently absent from the result, and that is the
  * intended reading rather than a dropped row: the finding is gone — the orphan gained a
  * link, or the page was deleted — and PRD §7.1 rule 4 is that a live measurement outranks
- * a stored human claim. The review stays in the table because the finding may come back,
- * which is the gap §7.1 leaves open until step 13's crawl history.
+ * a stored human claim. The review stays in the table because the finding may come back.
+ *
+ * **`reappeared` closes the gap §7.1 left open until step 13's crawl history:** a
+ * finding that disappeared and later returned must not silently reactivate its old
+ * review — the page (or link) that exists today may not be the one that was judged, and
+ * a reader who never sees it re-ranked as `new` never finds out it went away at all.
+ * Callers compute the set from `@link-graph/diffs`' `reappearedSince` against
+ * `crawl_diffs`; the default is empty so a caller that has not wired the history through
+ * yet gets today's behaviour rather than a silent type error.
  */
 export function bucketFindings<E extends FindingEvidence>(
   findings: readonly Finding<E>[],
   reviews: ReadonlyMap<string, FindingReviewRow>,
+  reappeared: ReadonlySet<string> = new Set(),
 ): ReviewedFinding<E>[] {
   return findings.map((finding) => {
     const review = reviews.get(finding.subject) ?? null;
-    if (review === null) return { finding, review, bucket: "new" };
+    if (review === null || reappeared.has(finding.subject)) {
+      return { finding, review: null, bucket: "new" };
+    }
     const current = evidenceDigest(finding.evidence);
     return {
       finding,
