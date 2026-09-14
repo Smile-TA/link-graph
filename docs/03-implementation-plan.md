@@ -972,10 +972,29 @@ scaling — one process runs both queues, and PRD §8 sizes this as a single-VM 
 stack; `pool.on("error")` still only covers idle clients (step 6/9's open item); staging
 crawls stay out of the schedule (step 14).
 
-## Step 11 — `api` — M
+## Step 11 — `api` — M — **done**
 
 Read-only over Postgres. Tested by seeding with `loadFixture` and asserting responses.
 No crawler in the test path.
+
+**Done.** `packages/api` — `createServer(pool) → http.Server` over `node:http`, no
+framework: three GET routes (`/sites`, `/sites/:slug`, `/sites/:slug/report`), the first
+HTTP server in the repo. 5 integration tests, seeded with `loadFixture` + `analyse` over
+the 403bplan.net captures, no crawler in the test path.
+
+**The report route is not a second implementation of step 7.6's report.**
+`runReportCommand` (`packages/cli/src/report-command.ts`) already assembles the exact
+`SiteReport` `link-graph report` prints — registry row → latest complete crawl → metrics
+→ findings → reviews → three-way split — and already refuses a crawl whose numbers
+disagree (`siteReportProblem`). The route calls it and returns the object as JSON instead
+of formatting it as text, so the API and the CLI can never print two different orphan
+counts for the same crawl. `runReportCommand` and `UsageError` are now exported from
+`packages/cli/src/index.ts` for this reason.
+
+**Errors map on what they mean, not on catching everything as 500.** `UsageError` (no
+such site in the registry) is 404; any other refusal from `runReportCommand` (no complete
+crawl yet, no `crawl_metrics` row, a stored-numbers disagreement) is 409 — a true fact
+about the site's current state, not a server failure.
 
 ## Step 12 — `web` (Astro) — L
 

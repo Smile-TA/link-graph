@@ -1,0 +1,16 @@
+{
+  "name": "@link-graph/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@link-graph/cli": "*",
+    "@link-graph/db": "*",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@link-graph/analyse": "*",
+    "@types/pg": "^8.15.5"
+  }
+}

@@ -6,10 +6,13 @@
  * file — `index.ts` — is what Node resolves by convention, and `bin.ts` stays reachable
  * only through the `bin` field.
  *
- * The one export needed outside this package so far: step 10's scheduler runs the
- * same crawl-then-analyse pipeline this CLI runs, against the same registry row, and
- * must not re-derive it.
+ * Exported for two outside consumers so far: step 10's scheduler runs the same
+ * crawl-then-analyse pipeline this CLI runs, against the same registry row, and step
+ * 11's read-only API serves the same report this CLI prints, as JSON instead of text —
+ * neither may re-derive it.
  */
 export { runCrawlCommand } from "./run.js";
 export type { CrawlCommandDeps } from "./run.js";
 export type { CrawlReport } from "./report.js";
+export { runReportCommand } from "./report-command.js";
+export { UsageError } from "./exit.js";
