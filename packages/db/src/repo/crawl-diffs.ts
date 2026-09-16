@@ -17,10 +17,29 @@ export async function insertCrawlDiff(
   db: Queryable,
   diff: CrawlDiffInput,
 ): Promise<void> {
+  await insertCrawlDiffs(db, [diff]);
+}
+
+/**
+ * Every diff row for one crawl pair in a single round trip, following `insertPages`/
+ * `insertLinks`'s `unnest` convention rather than one `INSERT` per row — a diff can run
+ * to a few hundred rows on a site with real churn.
+ */
+export async function insertCrawlDiffs(
+  db: Queryable,
+  diffs: readonly CrawlDiffInput[],
+): Promise<void> {
+  if (diffs.length === 0) return;
   await db.query(
     `INSERT INTO crawl_diffs (from_crawl_id, to_crawl_id, kind, url, detail)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [diff.fromCrawlId, diff.toCrawlId, diff.kind, diff.url, diff.detail],
+     SELECT * FROM unnest($1::bigint[], $2::bigint[], $3::text[], $4::text[], $5::text[])`,
+    [
+      diffs.map((d) => d.fromCrawlId),
+      diffs.map((d) => d.toCrawlId),
+      diffs.map((d) => d.kind),
+      diffs.map((d) => d.url),
+      diffs.map((d) => d.detail),
+    ],
   );
 }
 
@@ -57,7 +76,7 @@ export interface DiffEventRow {
 export async function listDiffEventsForSubjects(
   db: Queryable,
   siteId: number,
-  kindPrefix: string,
+  kindPrefix: "orphan" | "broken",
   subjects: readonly string[],
 ): Promise<DiffEventRow[]> {
   if (subjects.length === 0) return [];

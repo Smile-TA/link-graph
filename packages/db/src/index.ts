@@ -111,6 +111,7 @@ export {
 export type { LinkAnalysisCounts, PageAnalysisFact } from "./repo/analysis.js";
 export {
   insertCrawlDiff,
+  insertCrawlDiffs,
   listCrawlDiffs,
   listDiffEventsForSubjects,
 } from "./repo/crawl-diffs.js";

@@ -23,7 +23,7 @@ import type { CrawlDeps } from "@link-graph/crawl";
 import { crawlsToPrune, diffCrawls } from "@link-graph/diffs";
 import {
   findPreviousCompleteCrawl,
-  insertCrawlDiff,
+  insertCrawlDiffs,
   listBrokenLinkFindings,
   listCompleteCrawlIds,
   listOrphanFindings,
@@ -101,12 +101,13 @@ export async function runCrawlCommand(
     statusCode: page.statusCode,
   }));
 
-  // Step 13: diff against this site's last complete crawl, then prune row-level detail
-  // beyond the 12-crawl retention window (PRD §7). Two unrelated facts — what changed,
-  // and how much history to keep — so two functions, run one after the other only
-  // because retention has nothing to prune until this crawl's row exists.
-  await recordCrawlDiff(pool, crawled.id, result.crawlId, orphanRows);
-  await pruneRetention(pool, crawled.id);
+  // Step 13: diff against this site's last complete crawl, and prune row-level detail
+  // beyond the 12-crawl retention window (PRD §7). Two unrelated facts about this
+  // crawl's row, which already exists by this point — run concurrently.
+  await Promise.all([
+    recordCrawlDiff(pool, crawled.id, result.crawlId, orphanRows),
+    pruneRetention(pool, crawled.id),
+  ]);
 
   const report: CrawlReport = {
     siteId: site.siteId,
@@ -176,15 +177,16 @@ async function recordCrawlDiff(
   // multi-hundred-row diff must not leave this crawl pair's history half recorded —
   // the next report would then read a diff that undercounts what actually changed.
   await withTransaction(pool, async (tx) => {
-    for (const diff of diffs) {
-      await insertCrawlDiff(tx, {
+    await insertCrawlDiffs(
+      tx,
+      diffs.map((diff) => ({
         fromCrawlId: previous.id,
         toCrawlId: crawlId,
         kind: diff.kind,
         url: diff.url,
         detail: diff.detail,
-      });
-    }
+      })),
+    );
   });
 }
 
