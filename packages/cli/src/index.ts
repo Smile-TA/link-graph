@@ -16,3 +16,4 @@ export type { CrawlCommandDeps } from "./run.js";
 export type { CrawlReport } from "./report.js";
 export { runReportCommand } from "./report-command.js";
 export { UsageError } from "./exit.js";
+export { siteBySlug } from "./registry.js";

@@ -22,7 +22,7 @@ try {
     <title>{report.siteId} — link-graph</title>
   </head>
   <body>
-    <p><a href="/">&larr; sites</a></p>
+    <p><a href="/">&larr; sites</a> · <a href={`/sites/${report.siteId}/treemap/`}>treemap</a></p>
     <h1>{report.siteId} <small>{report.canonicalHost}</small></h1>
     <p>
       Crawl #{report.metrics.crawlId} — {report.crawl.pages} page(s), {report.crawl.links} link(s)

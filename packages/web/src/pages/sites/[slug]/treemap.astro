@@ -1,0 +1,77 @@
+---
+import { siteBySlug, UsageError } from "@link-graph/cli";
+import { findLatestCompleteCrawl, listPages, type PageClass } from "@link-graph/db";
+import { pool } from "../../../db";
+import { buildTree, layoutIcicle } from "../../../treemap";
+
+const { slug } = Astro.params;
+if (slug === undefined) return Astro.redirect("/");
+
+let site;
+try {
+  site = await siteBySlug(pool, slug);
+} catch (error) {
+  if (!(error instanceof UsageError)) throw error;
+  return new Response(error.message, { status: 404, headers: { "content-type": "text/plain" } });
+}
+
+const crawl = await findLatestCompleteCrawl(pool, site.id);
+if (crawl === null) {
+  return new Response(`no complete crawl of ${site.siteId} yet`, {
+    status: 409,
+    headers: { "content-type": "text/plain" },
+  });
+}
+const pages = await listPages(pool, crawl.id);
+const root = buildTree(pages);
+const ROW_HEIGHT = 22;
+const WIDTH = 960;
+const rects = layoutIcicle(root, WIDTH).filter((rect) => rect.width >= 1);
+
+const CLASS_COLOR: Record<PageClass, string> = {
+  linked: "#3b7a57",
+  orphan: "#c0392b",
+  excluded: "#95a5a6",
+  not_in_truth_source: "#e0a848",
+  undetectable: "#7f8c8d",
+};
+const DIRECTORY_COLOR = "#dfe6e9";
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{site.siteId} treemap — link-graph</title>
+    <style>
+      .rect { stroke: #fff; stroke-width: 0.5; }
+      .rect text { font: 10px sans-serif; fill: #222; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <p><a href={`/sites/${site.siteId}/`}>&larr; report</a></p>
+    <h1>{site.siteId} <small>{site.canonicalHost}</small> — site shape</h1>
+    <p>
+      Crawl #{crawl.id}, {pages.length} page(s). Each row is one path depth; width is
+      how many pages live under that segment. Colour is page class —
+      {Object.entries(CLASS_COLOR).map(([name, color]) => (
+        <span style={`margin-right: 1em; border-bottom: 3px solid ${color}`}>{name}</span>
+      ))}
+    </p>
+    <svg width={WIDTH} height={(Math.max(...rects.map((rect) => rect.depth)) + 1) * ROW_HEIGHT}>
+      {rects.map((rect) => (
+        <g class="rect" transform={`translate(${rect.x}, ${rect.depth * ROW_HEIGHT})`}>
+          <rect
+            width={rect.width}
+            height={ROW_HEIGHT}
+            fill={
+              rect.node.leafClass !== null ? CLASS_COLOR[rect.node.leafClass] : DIRECTORY_COLOR
+            }
+          />
+          {rect.width > 30 && <title>{rect.node.name} ({rect.node.value})</title>}
+          {rect.width > 30 && (
+            <text x={4} y={ROW_HEIGHT / 2 + 3}>{rect.node.name}</text>
+          )}
+        </g>
+      ))}
+    </svg>
+  </body>
+</html>
