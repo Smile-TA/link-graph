@@ -1,0 +1,51 @@
+---
+/**
+ * One finding table, split three ways (PRD §9) with all three bucket counts always
+ * shown — never a bare total, so a fully-reviewed site still reads "538, 538 reviewed"
+ * rather than looking clean the way a suppressed list would.
+ */
+import { REVIEW_BUCKETS, countBuckets, type ReviewedFinding } from "@link-graph/review";
+
+interface Props {
+  readonly title: string;
+  readonly findings: readonly ReviewedFinding[];
+  readonly renderEvidence: (finding: ReviewedFinding) => string;
+}
+
+const { title, findings, renderEvidence } = Astro.props;
+const buckets = countBuckets(findings);
+const BUCKET_LABEL = { new: "new", changed: "changed since review", reviewed: "reviewed" };
+---
+<section>
+  <h2>{title} ({findings.length})</h2>
+  <p>
+    {REVIEW_BUCKETS.map((bucket) => `${buckets[bucket]} ${BUCKET_LABEL[bucket]}`).join(", ")}
+  </p>
+  {findings.length === 0 ? (
+    <p>(none)</p>
+  ) : (
+    <table>
+      <thead>
+        <tr><th>bucket</th><th>subject</th><th>evidence</th><th>review</th></tr>
+      </thead>
+      <tbody>
+        {REVIEW_BUCKETS.flatMap((bucket) =>
+          findings
+            .filter((finding) => finding.bucket === bucket)
+            .map((finding) => (
+              <tr>
+                <td>{BUCKET_LABEL[bucket]}</td>
+                <td>{finding.finding.subject}</td>
+                <td>{renderEvidence(finding)}</td>
+                <td>
+                  {finding.review === null
+                    ? ""
+                    : `${finding.review.state} by ${finding.review.reviewedBy}: ${finding.review.note}`}
+                </td>
+              </tr>
+            )),
+        )}
+      </tbody>
+    </table>
+  )}
+</section>

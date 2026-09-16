@@ -4,7 +4,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   // scratch/ is the gitignored throwaway-script location (see .gitignore).
-  { ignores: ["**/dist/", "**/coverage/", "**/node_modules/", "scratch/"] },
+  { ignores: ["**/dist/", "**/coverage/", "**/node_modules/", "**/.astro/", "scratch/"] },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
@@ -38,7 +38,7 @@ export default tseslint.config(
   },
   {
     // Tooling reads these by default export; the convention cannot apply here.
-    files: ["*.config.{ts,mjs,js}", "eslint.config.mjs"],
+    files: ["*.config.{ts,mjs,js}", "**/*.config.{ts,mjs,js}", "eslint.config.mjs"],
     rules: { "no-restricted-syntax": "off" },
   },
 );

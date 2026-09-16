@@ -1002,10 +1002,33 @@ Tables first (orphans, soft orphans, broken links by blast radius), then treemap
 distribution charts on TanStack Charts. Both audiences, one data layer, two vocabularies
 (PRD §9). No node-link graph in this step.
 
-## Step 13 — diffs, history, notifications — M
+## Step 13 — diffs, history, notifications — M — **done**
 
 `crawl_diffs` between consecutive crawls, stamped with `deployed_tag`. Retention: link
 detail for 12 crawls, then roll up to `crawl_metrics`.
+
+**Done.** 548 unit tests, lint and Prettier clean. New `packages/diffs`
+(`diffCrawls`, `crawlsToPrune`, `reappearedSince`) plus wiring in `run.ts` so every
+crawl records what changed since the site's previous complete crawl (`crawl_diffs`,
+already defined by migration `004_metrics.sql`, unused until now) and prunes page/link
+detail beyond the 12-crawl retention window (PRD §7). `insertCrawlDiffs` bulk-inserts via `unnest`, following
+`insertPages`/`insertLinks`'s existing convention rather than one `INSERT` per row.
+
+**Closes PRD §7.1's open gap from step 7.6.** A reviewed finding that disappears and
+later returns no longer silently reactivates its old review: `packages/review`'s
+`reappearedSince` checks `crawl_diffs` history for a `resolved` event followed by a
+later `appeared` for the same subject, and `bucketFindings` routes any such subject to
+`new` regardless of digest match.
+
+**Left undone, deliberately:** notifications (the step's third named piece) have no
+transport — nothing in this codebase sends anything, so "what changed" is readable only
+by running `report`, and a push channel is unscoped work with no consumer yet.
+`deployed_tag` attribution is wired (`diffCrawls` accepts `previousTag`/`currentTag`)
+but always `null` in practice, because no caller resolves `image.tag` onto a crawl row
+(step 9's registry work stops at `sites`, never `crawls`). No roll-up of pruned detail
+into `crawl_metrics` beyond what `analyse` already wrote at crawl time — the plan's
+"then roll up to `crawl_metrics`" is already satisfied by every complete crawl getting
+its own `crawl_metrics` row, so pruning page/link rows loses no metric.
 
 ## Step 14 — ego network; staging — M
 

@@ -1,0 +1,46 @@
+---
+import { runReportCommand, UsageError } from "@link-graph/cli";
+import FindingTable from "../../../components/FindingTable.astro";
+import { pool } from "../../../db";
+import { brokenEvidence, orphanEvidence } from "../../../render";
+
+const { slug } = Astro.params;
+if (slug === undefined) return Astro.redirect("/");
+
+let report;
+try {
+  report = await runReportCommand(pool, slug);
+} catch (error) {
+  const status = error instanceof UsageError ? 404 : 409;
+  const message = error instanceof Error ? error.message : String(error);
+  return new Response(message, { status, headers: { "content-type": "text/plain" } });
+}
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{report.siteId} — link-graph</title>
+  </head>
+  <body>
+    <p><a href="/">&larr; sites</a></p>
+    <h1>{report.siteId} <small>{report.canonicalHost}</small></h1>
+    <p>
+      Crawl #{report.metrics.crawlId} — {report.crawl.pages} page(s), {report.crawl.links} link(s)
+      {report.crawl.wasThrottled && " — throttled at least once; treat orphans as a ceiling"}
+    </p>
+    {report.metrics.orphansUnknownReason !== null ? (
+      <p>Orphans unknown: {report.metrics.orphansUnknownReason}</p>
+    ) : (
+      <FindingTable
+        title="Orphans"
+        findings={report.orphans}
+        renderEvidence={orphanEvidence}
+      />
+    )}
+    <FindingTable
+      title="Broken internal links"
+      findings={report.brokenLinks}
+      renderEvidence={brokenEvidence}
+    />
+  </body>
+</html>
