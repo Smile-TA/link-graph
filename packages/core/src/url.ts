@@ -57,6 +57,37 @@ export interface SiteHosts {
   readonly aliases: readonly string[];
 }
 
+/** The fields `siteHosts` needs — a structural subset of `@link-graph/db`'s `SiteRow`. */
+export interface SiteHostConfig {
+  readonly canonicalHost: string;
+  readonly aliases: readonly string[];
+  readonly stageHost: string | null;
+}
+
+/**
+ * Which host identity a crawl treats as canonical (PRD §8, step 14): the site's own
+ * prod host and aliases, or — for a staging crawl — the stage host alone. A staging
+ * domain has no aliases of its own; using the prod alias set against it would collapse
+ * unrelated hosts into the same node.
+ *
+ * One function rather than each caller building `SiteHosts` by hand: `crawl` and
+ * `analyse` both derive node identity from a site row, and identity computed two ways
+ * for the same crawl is exactly how a staging page's depth root would stop matching its
+ * own rows (see `analyse`'s own note on its `homepageUrl` copy).
+ */
+export function siteHosts(site: SiteHostConfig, useStage: boolean): SiteHosts {
+  if (!useStage) return { canonicalHost: site.canonicalHost, aliases: site.aliases };
+  if (site.stageHost === null) {
+    throw new Error(
+      `site ${JSON.stringify(site.canonicalHost)} has no stage host configured`,
+    );
+  }
+  // `aliases` must include the host itself — "every host serving this site, including
+  // `canonicalHost`" is `SiteHosts`'s own contract, and a staging domain otherwise has
+  // no www-variant or other alias of its own.
+  return { canonicalHost: site.stageHost, aliases: [site.stageHost] };
+}
+
 export interface NormalizedUrl {
   /** Absolute URL with the canonical host, for use as node identity. */
   readonly href: string;

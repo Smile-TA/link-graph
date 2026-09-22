@@ -13,7 +13,7 @@
  *   confused at a glance;
  * - the degradations step 5 computes and nothing stores are printed rather than dropped.
  */
-import { isInventory } from "@link-graph/db";
+import { isInventory, type CrawlEnv } from "@link-graph/db";
 import {
   allAssessedLinkedRow,
   nothingAssessedRow,
@@ -81,6 +81,8 @@ export function inventoryIsProvablyIncomplete(
 export interface CrawlReport {
   readonly siteId: string;
   readonly canonicalHost: string;
+  /** Step 14: which host this run actually crawled — prod or the site's stage host. */
+  readonly env: CrawlEnv;
   readonly truth: {
     readonly kind: TruthSourceKind;
     /** What `sites.truth_source` said before this run, for the "changed" note. */
@@ -154,7 +156,12 @@ export function reportProblem(report: CrawlReport): string | null {
   // value cannot be an inventory in three places and not in a fourth. Assigning a
   // `TruthSourceKind` to its `TruthSource` parameter is the seam `packages/truth`
   // describes — a value in one list and not the other is a compile error here.
+  //
+  // **Prod only (step 14).** A staging run resolves the truth source too — to seed the
+  // frontier — but deliberately never writes it back (`run.ts`), so the same
+  // disagreement here is not a bug to report, it is the policy.
   if (
+    report.env === "prod" &&
     metrics.orphansUnknownReason === "no_truth_source" &&
     isInventory(report.truth.kind)
   ) {
@@ -207,10 +214,11 @@ function truthSource(report: CrawlReport): string {
     inventory === null
       ? "no inventory"
       : `${inventory} URL(s) (REST ${count(rest)}, sitemap ${count(sitemap)})`;
-  // Only when it moved: a line that says "unchanged" on every ordinary run is a line
-  // nobody reads on the run where it changed.
+  // Only when it moved, and only on prod: `run.ts` never writes `sites.truth_source`
+  // for a stage crawl (step 14), so `kind !== registryWas` there is expected and not a
+  // registry write that happened — this line must not claim one did.
   const changed =
-    kind === registryWas
+    report.env !== "prod" || kind === registryWas
       ? ""
       : `, registry updated from ${registryWas === null ? "unresolved" : registryWas}`;
   return `${kind} — ${size} in ${requests} request(s)${changed}`;

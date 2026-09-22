@@ -1,0 +1,49 @@
+---
+import { siteBySlug, UsageError } from "@link-graph/cli";
+import { findLatestCompleteCrawl, listPageAnalysisFacts } from "@link-graph/db";
+import { pool } from "../../../db";
+import { BarChart } from "../../../components/BarChart";
+import {
+  depthDistribution,
+  inboundLinkDistribution,
+  statusCodeDistribution,
+} from "../../../distributions";
+
+const { slug } = Astro.params;
+if (slug === undefined) return Astro.redirect("/");
+
+let site;
+try {
+  site = await siteBySlug(pool, slug);
+} catch (error) {
+  if (!(error instanceof UsageError)) throw error;
+  return new Response(error.message, { status: 404, headers: { "content-type": "text/plain" } });
+}
+
+const crawl = await findLatestCompleteCrawl(pool, site.id);
+if (crawl === null) {
+  return new Response(`no complete crawl of ${site.siteId} yet`, {
+    status: 409,
+    headers: { "content-type": "text/plain" },
+  });
+}
+const pages = await listPageAnalysisFacts(pool, crawl.id);
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{site.siteId} distributions — link-graph</title>
+  </head>
+  <body>
+    <p><a href={`/sites/${site.siteId}/`}>&larr; report</a></p>
+    <h1>{site.siteId} <small>{site.canonicalHost}</small> — distributions</h1>
+    <p>Crawl #{crawl.id}, {pages.length} page(s).</p>
+    <BarChart client:load title="Click depth" buckets={depthDistribution(pages)} />
+    <BarChart client:load title="Status code" buckets={statusCodeDistribution(pages)} />
+    <BarChart
+      client:load
+      title="Inbound internal links"
+      buckets={inboundLinkDistribution(pages)}
+    />
+  </body>
+</html>

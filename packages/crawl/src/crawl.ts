@@ -22,7 +22,12 @@
  *    insertion order, so two runs of the same crawl produce the same rows in the same
  *    sequence.
  */
-import { normalizeUrl, type NormalizedUrl, type SiteHosts } from "@link-graph/core";
+import {
+  normalizeUrl,
+  siteHosts,
+  type NormalizedUrl,
+  type SiteHosts,
+} from "@link-graph/core";
 import {
   addToFrontier,
   countCrawlRows,
@@ -35,6 +40,7 @@ import {
   recordFrontierFailure,
   reopenCrawl,
   resolveLinkTargets,
+  type CrawlEnv,
   type CrawlerMode,
   type SiteRow,
 } from "@link-graph/db";
@@ -96,14 +102,21 @@ export class PartialCrawlError extends Error {
  *
  * The site's homepage is always crawled, whether or not the inventory lists it:
  * reachability is measured from it and `analyse` refuses a crawl without it.
+ *
+ * `env` defaults to `"prod"` — phase 1's only cadence (PRD §8) — and became a
+ * parameter at step 14, when staging turned into a config flag on this same path
+ * rather than a second crawler. It picks `site.stageHost` as the node identity for
+ * this one run (`siteHosts`, `@link-graph/core`); everything else about the crawl —
+ * the fetcher, the rate limiter, the frontier, `analyse` afterward — is unchanged.
  */
 export async function crawl(
   pool: Pool,
   site: SiteRow,
   seeds: CrawlSeeds,
   deps: Partial<CrawlDeps> = {},
+  env: CrawlEnv = "prod",
 ): Promise<CrawlResult> {
-  const problem = seedProblem(site, seeds);
+  const problem = seedProblem(site, seeds, env);
   // Before `insertCrawl`, so a refused crawl leaves no row: a `running` crawl nobody
   // started would be indistinguishable from one a worker was killed during.
   if (problem !== null) throw new Error(`crawl: ${problem}`);
@@ -111,7 +124,7 @@ export async function crawl(
   const { crawler, release } = resolveDeps(site.crawlerMode, deps);
   let crawlId: number;
   try {
-    crawlId = await openCrawl(pool, site, seeds, crawler);
+    crawlId = await openCrawl(pool, site, seeds, crawler, env);
   } catch (error) {
     // Opening can fail — `006_truth_source.sql`'s CHECK on the three inventory counts is
     // deliberately left to the INSERT — and `run` has not been entered yet, so its
@@ -120,7 +133,7 @@ export async function crawl(
     await release();
     throw error;
   }
-  return run(pool, crawlId, site, false, crawler, release);
+  return run(pool, crawlId, site, false, crawler, release, env);
 }
 
 /** The `crawls` row and its seeded frontier: everything a resume would need. */
@@ -129,12 +142,12 @@ async function openCrawl(
   site: SiteRow,
   seeds: CrawlSeeds,
   crawler: CrawlDeps,
+  env: CrawlEnv,
 ): Promise<number> {
-  const home = homepageUrl(site);
+  const home = homepageUrl(site, env);
   const crawlRow = await insertCrawl(pool, {
     siteId: site.id,
-    // Phase 1 is prod-only (PRD §8) — a decision already made, not a parameter.
-    env: "prod",
+    env,
     startedAt: crawler.now(),
     finishedAt: null,
     status: "running",
@@ -197,8 +210,10 @@ export async function resumeCrawl(
   await reopenCrawl(pool, crawlId);
   const { crawler, release } = resolveDeps(site.crawlerMode, deps);
   // `was_throttled` is sticky across resumes: a crawl that was blocked was blocked, even
-  // if a later run finished it.
-  return run(pool, crawlId, site, crawlRow.wasThrottled, crawler, release);
+  // if a later run finished it. `env` is read off the crawl row, not re-passed: it was
+  // fixed when the crawl was opened, and a resume must use the same node identity the
+  // rows already on disk were written under.
+  return run(pool, crawlId, site, crawlRow.wasThrottled, crawler, release, crawlRow.env);
 }
 
 /**
@@ -243,11 +258,13 @@ async function run(
   wasThrottledBefore: boolean,
   deps: CrawlDeps,
   release: () => Promise<void>,
+  env: CrawlEnv,
 ): Promise<CrawlResult> {
-  const hosts: SiteHosts = { canonicalHost: site.canonicalHost, aliases: site.aliases };
-  // Keyed by the canonical host, not by the host of each request: an alias hop reaches
-  // the same server and the same Wordfence, so the two must share one queue.
-  const queue = deps.limiter.forHost(site.canonicalHost, site.rateLimit);
+  const hosts = siteHosts(site, env === "stage");
+  // Keyed by the effective canonical host, not by the host of each request: an alias
+  // hop reaches the same server and the same Wordfence, so the two must share one
+  // queue — and a staging run must not share prod's, or queue behind its rate limit.
+  const queue = deps.limiter.forHost(hosts.canonicalHost, site.rateLimit);
   const get = (url: string) => queue.schedule(() => deps.fetcher.get(url));
 
   let fetched = (await countFrontier(pool, crawlId)).fetched;
@@ -388,15 +405,12 @@ function identityOf(urlNormalized: string, hosts: SiteHosts): NormalizedUrl {
  * `core`, beside `normalizeUrl`. Not done here because the first copy is inside
  * `packages/analyse`, committed in step 4, and step 6 does not otherwise touch it.
  */
-function homepageUrl(site: SiteRow): string {
-  const home = normalizeUrl("/", {
-    canonicalHost: site.canonicalHost,
-    aliases: site.aliases,
-  });
+function homepageUrl(site: SiteRow, env: CrawlEnv): string {
+  const home = normalizeUrl("/", siteHosts(site, env === "stage"));
   if (home === null) {
     throw new Error(
-      `crawl: site ${site.siteId} has an unusable canonical host ` +
-        `${JSON.stringify(site.canonicalHost)}`,
+      `crawl: site ${site.siteId} has an unusable ${env} host ` +
+        `${JSON.stringify(env === "stage" ? site.stageHost : site.canonicalHost)}`,
     );
   }
   return home.href;

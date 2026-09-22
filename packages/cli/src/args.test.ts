@@ -6,7 +6,23 @@ describe("parseArgs", () => {
     expect(parseArgs(["crawl", "403bplan-net"])).toEqual({
       kind: "crawl",
       siteId: "403bplan-net",
+      env: "prod",
     });
+  });
+
+  /** Step 14: staging is a flag on this same command, not a second one. */
+  it("reads --stage as env: stage", () => {
+    expect(parseArgs(["crawl", "403bplan-net", "--stage"])).toEqual({
+      kind: "crawl",
+      siteId: "403bplan-net",
+      env: "stage",
+    });
+  });
+
+  it("refuses --stage given twice", () => {
+    expect(problem(parseArgs(["crawl", "403bplan-net", "--stage", "--stage"]))).toMatch(
+      /--stage given twice/,
+    );
   });
 
   it("asks for help three ways, as the first word", () => {

@@ -1,0 +1,65 @@
+---
+import { siteBySlug, UsageError } from "@link-graph/cli";
+import { findLatestCompleteCrawl, listLinks, listPages } from "@link-graph/db";
+import { pool } from "../../../db";
+import { buildSectionMatrix } from "../../../section-matrix";
+
+const { slug } = Astro.params;
+if (slug === undefined) return Astro.redirect("/");
+
+let site;
+try {
+  site = await siteBySlug(pool, slug);
+} catch (error) {
+  if (!(error instanceof UsageError)) throw error;
+  return new Response(error.message, { status: 404, headers: { "content-type": "text/plain" } });
+}
+
+const crawl = await findLatestCompleteCrawl(pool, site.id);
+if (crawl === null) {
+  return new Response(`no complete crawl of ${site.siteId} yet`, {
+    status: 409,
+    headers: { "content-type": "text/plain" },
+  });
+}
+const [pages, links] = await Promise.all([listPages(pool, crawl.id), listLinks(pool, crawl.id)]);
+const { sections, counts } = buildSectionMatrix(pages, links);
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{site.siteId} section matrix — link-graph</title>
+    <style>
+      table { border-collapse: collapse; }
+      th, td { border: 1px solid #ccc; padding: 2px 6px; text-align: right; }
+      th:first-child, td:first-child { text-align: left; }
+      td.diag { background: #f0f0f0; }
+      td.zero { color: #bbb; }
+    </style>
+  </head>
+  <body>
+    <p><a href={`/sites/${site.siteId}/`}>&larr; report</a></p>
+    <h1>{site.siteId} <small>{site.canonicalHost}</small> — section matrix</h1>
+    <p>
+      Crawl #{crawl.id}. Rows are the linking section, columns the linked-to section.
+      Boilerplate (nav/footer) and self-links are excluded, so a cell counts only
+      links a reader would actually encounter reading that section's content.
+    </p>
+    <table>
+      <thead>
+        <tr><th>from \ to</th>{sections.map((to) => <th>{to}</th>)}</tr>
+      </thead>
+      <tbody>
+        {sections.map((from) => (
+          <tr>
+            <th>{from}</th>
+            {sections.map((to) => {
+              const count = counts.get(from)!.get(to)!;
+              return <td class:list={{ diag: from === to, zero: count === 0 }}>{count}</td>;
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </body>
+</html>

@@ -5,8 +5,8 @@
  * failures-that-read-as-results caught at the only moment it is cheap: before the crawl
  * has spent hours of request budget producing rows nobody can trust.
  */
-import { normalizeUrl, type SiteHosts } from "@link-graph/core";
-import { isInventory, type SiteRow } from "@link-graph/db";
+import { normalizeUrl, siteHosts, type SiteHosts } from "@link-graph/core";
+import { isInventory, type CrawlEnv, type SiteRow } from "@link-graph/db";
 import { sampleCeilingProblem } from "./sample.js";
 
 /** One inventory URL and the CMS object the truth source named for it (step 5). */
@@ -51,8 +51,12 @@ export interface CrawlSeeds {
  * so a violation still stops the crawl before it fetches anything. Restating that
  * arithmetic here would be a second copy of it to drift.
  */
-export function seedProblem(site: SiteRow, seeds: CrawlSeeds): string | null {
-  const hosts: SiteHosts = { canonicalHost: site.canonicalHost, aliases: site.aliases };
+export function seedProblem(
+  site: SiteRow,
+  seeds: CrawlSeeds,
+  env: CrawlEnv = "prod",
+): string | null {
+  const hosts = siteHosts(site, env === "stage");
   const seen = new Set<string>();
   for (const [index, seed] of seeds.urls.entries()) {
     const problem = seedUrlProblem(seed.url, index, hosts, seen);

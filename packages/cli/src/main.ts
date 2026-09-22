@@ -44,8 +44,11 @@ export interface Io {
 const USAGE = `link-graph — orphan and link analysis for the estate
 
 Usage:
-  link-graph crawl <site-id>   resolve the site's truth source, crawl it, analyse it,
-                               and print the orphan table
+  link-graph crawl <site-id> [--stage]
+                               resolve the site's truth source, crawl it, analyse it,
+                               and print the orphan table. --stage crawls the site's
+                               stage host instead of prod (step 14); its crawl never
+                               counts as the site's report-worthy crawl (PRD §7.1)
   link-graph report <site-id>  re-read the site's last complete crawl and print its
                                findings split by review state. Reads the database only:
                                no network, no re-analysis, no number changed
@@ -164,6 +167,7 @@ export async function main(
       invocation.siteId,
       (line) => io.err(line),
       deps,
+      invocation.env,
     );
     io.out(formatReport(report));
     return exitCodeForReport(report);

@@ -189,9 +189,13 @@ async function crawlIdOf(site: SiteRow): Promise<number> {
   return rows[0]?.id ?? 0;
 }
 
-async function run(site: SiteRow, server: FixtureServer) {
+async function run(
+  site: SiteRow,
+  server: FixtureServer,
+  extraArgs: readonly string[] = [],
+) {
   const io = capture();
-  const code = await main(["crawl", site.siteId], io.io, deps(server));
+  const code = await main(["crawl", site.siteId, ...extraArgs], io.io, deps(server));
   return { code, stdout: io.stdout(), stderr: io.stderr() };
 }
 
@@ -317,6 +321,63 @@ describe("link-graph crawl", () => {
     expect((await run(site, server)).code).toBe(EXIT.ok);
     expect(await rowVersion(site)).not.toBe(before);
     expect((await findSiteBySlug(db.pool, site.siteId))?.truthSource).toBe("rest");
+  });
+
+  /**
+   * Step 14: staging is a flag on this same command, not a second one. The registry
+   * row's "prod" identity is a host the fixture server never answers for, so a real
+   * crawl of it is impossible — the point being that `--stage` never touches that host
+   * at all: node identity, the truth-source resolution and the crawl itself all go to
+   * `stageHost` instead, which here is where `serve403bplanSite`'s real content lives.
+   * `sites.truth_source` must stay untouched — it is a fact about the site's real (prod)
+   * deployment, and a stage resolution overwriting it would corrupt `analyse`'s
+   * coverage gate and step 9's coverage-drift report for the next *prod* crawl.
+   */
+  it("crawls the stage host under --stage, leaving sites.truth_source untouched", async () => {
+    const server = await serve(serve403bplanSite);
+    const unreachableProdHost = "prod-placeholder.invalid";
+    const site = await makeSite({
+      canonicalHost: unreachableProdHost,
+      aliases: [unreachableProdHost],
+      stageHost: HOST,
+    });
+    expect(site.truthSource).toBeNull();
+
+    const result = await run(site, server, ["--stage"]);
+
+    expect(result.stderr, "no failure expected").not.toMatch(/error/i);
+    // Orphans come out unknown, not 0: the registry's `truth_source` stays null (it is
+    // never written for a stage crawl), and `analyse` reads that real, unchanged value —
+    // not the resolution this one run happened to find on the stage host.
+    expect(result.code).toBe(EXIT.undetectable);
+    expect(result.stderr).toMatch(new RegExp(`resolving the truth source for ${HOST}`));
+    expect(result.stdout).toContain(HOST);
+    expect(result.stdout).not.toContain(unreachableProdHost);
+    // The resolution found a real inventory on the stage host, but that must never be
+    // reported as a registry write that never happened (`run.ts` skips it for stage).
+    expect(result.stdout).not.toContain("registry updated");
+
+    expect((await findSiteBySlug(db.pool, site.siteId))?.truthSource).toBeNull();
+
+    const { rows } = await db.pool.query<{ env: string }>(
+      `SELECT env FROM crawls WHERE id = $1`,
+      [await crawlIdOf(site)],
+    );
+    expect(rows[0]?.env).toBe("stage");
+  });
+
+  it("refuses --stage for a site with no stage host configured", async () => {
+    const server = await serve(serve403bplanSite);
+    const site = await makeSite();
+    expect(site.stageHost).toBeNull();
+
+    const result = await run(site, server, ["--stage"]);
+    expect(result.code).toBe(EXIT.usage);
+    expect(result.stderr).toMatch(/no stage host configured/);
+    const { rows } = await db.pool.query(`SELECT 1 FROM crawls WHERE site_id = $1`, [
+      site.id,
+    ]);
+    expect(rows).toHaveLength(0);
   });
 
   /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeUrl } from "./url.js";
+import { normalizeUrl, siteHosts } from "./url.js";
 
 // Fixtures are real hosts from the estate (docs/census.json), not invented ones.
 const lionstreet = {
@@ -259,5 +259,31 @@ describe("normalizeUrl: query ordering", () => {
     expect(normalizeUrl("https://lionstreet.com/x/?utm_source=a", lionstreet)?.path).toBe(
       "/x/",
     );
+  });
+});
+
+describe("siteHosts", () => {
+  const site = {
+    canonicalHost: "lionstreet.com",
+    aliases: ["lionstreet.com", "www.lionstreet.com"],
+    stageHost: "lionstreet-2024.staging02.example.com",
+  };
+
+  it("returns the prod host and aliases unchanged when not staging", () => {
+    expect(siteHosts(site, false)).toEqual({
+      canonicalHost: "lionstreet.com",
+      aliases: ["lionstreet.com", "www.lionstreet.com"],
+    });
+  });
+
+  it("returns the stage host as its own sole alias when staging", () => {
+    expect(siteHosts(site, true)).toEqual({
+      canonicalHost: "lionstreet-2024.staging02.example.com",
+      aliases: ["lionstreet-2024.staging02.example.com"],
+    });
+  });
+
+  it("refuses a staging request for a site with no stage host", () => {
+    expect(() => siteHosts({ ...site, stageHost: null }, true)).toThrow(/no stage host/);
   });
 });

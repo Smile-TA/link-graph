@@ -10,10 +10,13 @@ interface Props {
   readonly title: string;
   readonly findings: readonly ReviewedFinding[];
   readonly renderEvidence: (finding: ReviewedFinding) => string;
+  /** When given, each subject links to its ego network (PRD §9 item 5) there. */
+  readonly siteId?: string;
 }
 
-const { title, findings, renderEvidence } = Astro.props;
+const { title, findings, renderEvidence, siteId } = Astro.props;
 const buckets = countBuckets(findings);
+const egoUrl = (subject: string) => `/sites/${siteId}/ego/?path=${encodeURIComponent(subject)}`;
 const BUCKET_LABEL = { new: "new", changed: "changed since review", reviewed: "reviewed" };
 ---
 <section>
@@ -35,7 +38,13 @@ const BUCKET_LABEL = { new: "new", changed: "changed since review", reviewed: "r
             .map((finding) => (
               <tr>
                 <td>{BUCKET_LABEL[bucket]}</td>
-                <td>{finding.finding.subject}</td>
+                <td>
+                  {siteId === undefined ? (
+                    finding.finding.subject
+                  ) : (
+                    <a href={egoUrl(finding.finding.subject)}>{finding.finding.subject}</a>
+                  )}
+                </td>
                 <td>{renderEvidence(finding)}</td>
                 <td>
                   {finding.review === null

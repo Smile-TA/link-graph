@@ -22,7 +22,12 @@ try {
     <title>{report.siteId} — link-graph</title>
   </head>
   <body>
-    <p><a href="/">&larr; sites</a> · <a href={`/sites/${report.siteId}/treemap/`}>treemap</a></p>
+    <p>
+      <a href="/">&larr; sites</a> · <a href={`/sites/${report.siteId}/treemap/`}>treemap</a> ·
+      <a href={`/sites/${report.siteId}/distributions/`}>distributions</a> ·
+      <a href={`/sites/${report.siteId}/section-matrix/`}>section matrix</a> ·
+      <a href={`/sites/${report.siteId}/ego/`}>ego network</a>
+    </p>
     <h1>{report.siteId} <small>{report.canonicalHost}</small></h1>
     <p>
       Crawl #{report.metrics.crawlId} — {report.crawl.pages} page(s), {report.crawl.links} link(s)
@@ -35,12 +40,14 @@ try {
         title="Orphans"
         findings={report.orphans}
         renderEvidence={orphanEvidence}
+        siteId={report.siteId}
       />
     )}
     <FindingTable
       title="Broken internal links"
       findings={report.brokenLinks}
       renderEvidence={brokenEvidence}
+      siteId={report.siteId}
     />
   </body>
 </html>

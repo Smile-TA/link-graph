@@ -11,10 +11,15 @@
  * that would otherwise store a judgement nobody made is refused by name below.
  */
 import { FINDING_KINDS, REVIEW_STATES } from "@link-graph/db";
-import type { FindingKind, ReviewState } from "@link-graph/db";
+import type { CrawlEnv, FindingKind, ReviewState } from "@link-graph/db";
 
 export type Invocation =
-  | { readonly kind: "crawl"; readonly siteId: string }
+  | {
+      readonly kind: "crawl";
+      readonly siteId: string;
+      /** `--stage` (step 14): crawl the site's stage host, not its prod one. */
+      readonly env: CrawlEnv;
+    }
   | {
       readonly kind: "note";
       readonly siteId: string;
@@ -34,7 +39,7 @@ export type Invocation =
   | { readonly kind: "usage-error"; readonly problem: string };
 
 const HINT =
-  "usage: link-graph crawl <site-id> | note <site-id> <kind> <subject> " +
+  "usage: link-graph crawl <site-id> [--stage] | note <site-id> <kind> <subject> " +
   "--intentional|--acknowledged -m <note> | report <site-id> | " +
   "registry sync|report (see --help)";
 
@@ -59,14 +64,15 @@ export function parseArgs(argv: readonly string[]): Invocation {
       : usageError(`${quote(command)} takes no other arguments`);
   }
   if (command === undefined) return usageError("no command given");
-  if (command === "crawl" || command === "report") return oneSite(command, argv);
+  if (command === "crawl") return crawlArgs(argv);
+  if (command === "report") return oneSite(command, argv);
   if (command === "note") return note(argv);
   if (command === "registry") return registry(argv);
   return usageError(`unknown command ${quote(command)}`);
 }
 
-/** `crawl <site-id>` and `report <site-id>`: one positional, no options, no extras. */
-function oneSite(command: "crawl" | "report", argv: readonly string[]): Invocation {
+/** `report <site-id>`: one positional, no options, no extras. */
+function oneSite(command: "report", argv: readonly string[]): Invocation {
   const [, siteId, extra] = argv;
   if (siteId === undefined) return usageError(`${command} needs a site id`);
   if (siteId.startsWith("-")) {
@@ -78,6 +84,34 @@ function oneSite(command: "crawl" | "report", argv: readonly string[]): Invocati
     );
   }
   return { kind: command, siteId };
+}
+
+/**
+ * `crawl <site-id> [--stage]` (step 14). `--stage` is the only option: staging is a
+ * config flag on this same command, not a second one, and everything downstream (the
+ * fetcher, the frontier, `analyse`) is unchanged by it — only the node identity is
+ * (`@link-graph/core`'s `siteHosts`).
+ */
+function crawlArgs(argv: readonly string[]): Invocation {
+  const [, siteId, ...flags] = argv;
+  if (siteId === undefined) return usageError("crawl needs a site id");
+  if (siteId.startsWith("-")) {
+    return usageError(`unknown option ${quote(siteId)} — give a site id first`);
+  }
+  let env: CrawlEnv = "prod";
+  for (const flag of flags) {
+    if (flag === "--stage") {
+      if (env === "stage") return usageError("--stage given twice");
+      env = "stage";
+      continue;
+    }
+    return usageError(
+      flag.startsWith("-")
+        ? `unknown option ${quote(flag)} — crawl takes a site id and --stage`
+        : `unexpected argument ${quote(flag)} — crawl takes one site id and --stage`,
+    );
+  }
+  return { kind: "crawl", siteId, env };
 }
 
 /**

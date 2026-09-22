@@ -1,0 +1,158 @@
+---
+import { siteBySlug, UsageError } from "@link-graph/cli";
+import { findLatestCompleteCrawl, findPageByUrl, listLinks, listPages } from "@link-graph/db";
+import { normalizeUrl, siteHosts } from "@link-graph/core";
+import { pool } from "../../../db";
+import {
+  buildEgoNetwork,
+  layoutEgoNetwork,
+  type EgoDirection,
+} from "../../../ego-network";
+
+const { slug } = Astro.params;
+if (slug === undefined) return Astro.redirect("/");
+
+let site;
+try {
+  site = await siteBySlug(pool, slug);
+} catch (error) {
+  if (!(error instanceof UsageError)) throw error;
+  return new Response(error.message, { status: 404, headers: { "content-type": "text/plain" } });
+}
+
+const crawl = await findLatestCompleteCrawl(pool, site.id);
+if (crawl === null) {
+  return new Response(`no complete crawl of ${site.siteId} yet`, {
+    status: 409,
+    headers: { "content-type": "text/plain" },
+  });
+}
+
+// Defaults to the homepage — the one page every crawl is guaranteed to have (step 6).
+const requested = Astro.url.searchParams.get("path") ?? "/";
+const hosts = siteHosts(site, crawl.env === "stage");
+const target = normalizeUrl(requested, hosts);
+if (target === null) {
+  return new Response(`${JSON.stringify(requested)} is not a crawlable URL`, {
+    status: 400,
+    headers: { "content-type": "text/plain" },
+  });
+}
+
+const [pages, links] = await Promise.all([listPages(pool, crawl.id), listLinks(pool, crawl.id)]);
+const centerPage = await findPageByUrl(pool, crawl.id, target.href);
+if (centerPage === null) {
+  return new Response(`${target.href} has no page row in crawl #${crawl.id}`, {
+    status: 404,
+    headers: { "content-type": "text/plain" },
+  });
+}
+
+// A request for the raw link direction, not an inbound-vs-outbound *classification* of
+// each neighbour — a footer link makes a page's own inbound and outbound neighbours
+// look identical in the "both" view, which is the ambiguity this flag exists to let a
+// reader resolve for themselves rather than have `buildEgoNetwork` guess at.
+const rawDir = Astro.url.searchParams.get("dir");
+const dir: EgoDirection = rawDir === "out" || rawDir === "in" ? rawDir : "both";
+
+const network = buildEgoNetwork(pages, links, centerPage.id, dir);
+const WIDTH = 720;
+const HEIGHT = 720;
+const positioned = layoutEgoNetwork(network, WIDTH, HEIGHT);
+const byId = new Map(positioned.map((node) => [node.pageId, node]));
+
+const egoUrl = (path: string, forDir: EgoDirection = dir) =>
+  `/sites/${site.siteId}/ego/?path=${encodeURIComponent(path)}&dir=${forDir}`;
+const HOP_COLOR = { 0: "#1d4ed8", 1: "#3b7a57", 2: "#8a8f98" } as const;
+const RADIUS = { 0: 8, 1: 5, 2: 5 } as const;
+const DIR_LABEL = { both: "both directions", out: "outbound only", in: "inbound only" } as const;
+
+/** Pulls the line's end back to the target circle's edge, so the arrowhead is visible
+ * rather than hidden under the node it points at. */
+function shortenToRadius(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  r: number,
+): { x: number; y: number } {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.hypot(dx, dy) || 1;
+  return { x: x2 - (dx / length) * r, y: y2 - (dy / length) * r };
+}
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{site.siteId} ego network — link-graph</title>
+    <style>
+      .edge { stroke: #999; stroke-width: 1; }
+      .node circle { stroke: #fff; stroke-width: 1.5; }
+      .node text { font: 10px sans-serif; fill: #222; }
+      .node a { cursor: pointer; }
+      .dir-toggle a { margin-right: 0.5em; }
+      .dir-toggle a.current { font-weight: bold; text-decoration: none; color: #222; }
+    </style>
+  </head>
+  <body>
+    <p><a href={`/sites/${site.siteId}/`}>&larr; report</a></p>
+    <h1>{site.siteId} <small>{site.canonicalHost}</small> — ego network</h1>
+    <p>
+      Crawl #{crawl.id}. Centred on <code>{centerPage.path}</code>
+      ({network.nodes.length} page(s), {network.edges.length} edge(s)
+      {network.truncated && " — hop-2 pages beyond ~50 were cut"}). Blue is the centre,
+      green a direct neighbour, grey a neighbour's neighbour. Arrows show which way each
+      link actually points. Click a page to re-centre.
+    </p>
+    <p class="dir-toggle">
+      Direction:
+      {(["both", "out", "in"] as const).map((option) => (
+        <a href={egoUrl(centerPage.path, option)} class:list={{ current: option === dir }}>
+          {DIR_LABEL[option]}
+        </a>
+      ))}
+    </p>
+    <svg width={WIDTH} height={HEIGHT}>
+      <defs>
+        <marker
+          id="arrow"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="6"
+          markerHeight="6"
+          orient="auto-start-reverse"
+        >
+          <path d="M0,0L10,5L0,10z" fill="#999" />
+        </marker>
+      </defs>
+      {network.edges.map((edge) => {
+        const from = byId.get(edge.from);
+        const to = byId.get(edge.to);
+        if (from === undefined || to === undefined) return null;
+        const end = shortenToRadius(from.x, from.y, to.x, to.y, RADIUS[to.hop]);
+        return (
+          <line
+            class="edge"
+            x1={from.x}
+            y1={from.y}
+            x2={end.x}
+            y2={end.y}
+            marker-end="url(#arrow)"
+          />
+        );
+      })}
+      {positioned.map((node) => (
+        <g class="node" transform={`translate(${node.x}, ${node.y})`}>
+          <a href={egoUrl(node.path)}>
+            <title>{node.path} — {node.class ?? "not yet classified"}</title>
+            <circle r={RADIUS[node.hop]} fill={HOP_COLOR[node.hop]} />
+            <text x={10} y={4}>{node.path}</text>
+          </a>
+        </g>
+      ))}
+    </svg>
+  </body>
+</html>

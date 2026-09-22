@@ -11,7 +11,7 @@
  * wiring plus the refusals. Every refusal here exists because the alternative is a number
  * that reads as good news — §1's one rule.
  */
-import { normalizeUrl } from "@link-graph/core";
+import { normalizeUrl, siteHosts } from "@link-graph/core";
 import type { Pool } from "pg";
 import {
   countAnalysedLinks,
@@ -26,6 +26,7 @@ import {
   setPageClasses,
   upsertCrawlMetrics,
   withTransaction,
+  type CrawlEnv,
   type CrawlMetricsInput,
   type SiteRow,
 } from "@link-graph/db";
@@ -105,7 +106,7 @@ export async function analyse(
     );
   }
 
-  const homeUrl = homepageUrl(site);
+  const homeUrl = homepageUrl(site, crawl.env);
   const siteRules: SiteRules = {
     truthSource: site.truthSource,
     crawlScope: site.crawlScope,
@@ -242,15 +243,12 @@ function percentage(name: string, value: number | undefined, fallback: number): 
  * produced, and two independent statements of node identity for the single most
  * important node is how the depth root silently stops matching (engineering guide §2.1).
  */
-function homepageUrl(site: SiteRow): string {
-  const home = normalizeUrl("/", {
-    canonicalHost: site.canonicalHost,
-    aliases: site.aliases,
-  });
+function homepageUrl(site: SiteRow, env: CrawlEnv): string {
+  const home = normalizeUrl("/", siteHosts(site, env === "stage"));
   if (home === null) {
     throw new Error(
-      `analyse: site ${site.siteId} has an unusable canonical host ` +
-        `${JSON.stringify(site.canonicalHost)}`,
+      `analyse: site ${site.siteId} has an unusable ${env} host ` +
+        `${JSON.stringify(env === "stage" ? site.stageHost : site.canonicalHost)}`,
     );
   }
   return home.href;

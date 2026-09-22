@@ -45,6 +45,7 @@ export const THE_ORPHANS = [
 export const someReport = (over: Partial<CrawlReport> = {}): CrawlReport => ({
   siteId: "403bplan-net",
   canonicalHost: "403bplan.net",
+  env: "prod",
   truth: {
     kind: "rest",
     registryWas: null,

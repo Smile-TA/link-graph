@@ -18,6 +18,7 @@
  * column that holds it.
  */
 import { analyse } from "@link-graph/analyse";
+import { siteHosts } from "@link-graph/core";
 import { crawl } from "@link-graph/crawl";
 import type { CrawlDeps } from "@link-graph/crawl";
 import { crawlsToPrune, diffCrawls } from "@link-graph/diffs";
@@ -30,6 +31,7 @@ import {
   pruneCrawlDetail,
   upsertSite,
   withTransaction,
+  type CrawlEnv,
   type SiteRow,
   type TruthSource,
 } from "@link-graph/db";
@@ -59,12 +61,24 @@ export async function runCrawlCommand(
   siteId: string,
   progress: (line: string) => void,
   deps: Partial<CrawlCommandDeps> = {},
+  env: CrawlEnv = "prod",
 ): Promise<CrawlReport> {
   const site = await registrySite(pool, siteId);
+  if (env === "stage" && site.stageHost === null) {
+    throw new UsageError(
+      `site ${site.siteId} has no stage host configured, so it cannot be crawled with ` +
+        `--stage`,
+    );
+  }
+  // Which host the truth source and the crawl itself resolve against — the site's own
+  // prod host and aliases, or the stage host alone (step 14). `@link-graph/core`'s
+  // `siteHosts` makes the same choice from the same site row and `env`, so `crawl`
+  // (which calls it independently) never derives identity a second, different way.
+  const hosts = siteHosts(site, env === "stage");
 
-  progress(`resolving the truth source for ${site.canonicalHost}…`);
+  progress(`resolving the truth source for ${hosts.canonicalHost}…`);
   const truth = await resolveTruthSource(
-    { siteId: site.siteId, canonicalHost: site.canonicalHost, aliases: site.aliases },
+    { siteId: site.siteId, canonicalHost: hosts.canonicalHost, aliases: hosts.aliases },
     deps.truth ?? createHttpFetcher(),
   );
   // The assignment `packages/truth` names as the seam between the two vocabularies: a
@@ -72,22 +86,33 @@ export async function runCrawlCommand(
   // constraint violation at INSERT.
   const resolved: TruthSource = truth.kind;
   const registryWas = site.truthSource;
-  // Only when it moved. `upsertSite` writes all eleven columns, nine of which are the
-  // curation overlay's (PRD §3) and none of which this command owns, so a blind
-  // read-modify-write on every crawl is a wider write than the one fact learned here.
+  // Only when it moved, and only for a prod crawl. `sites.truth_source` is read
+  // elsewhere as a fact about the site's real deployment (`analyse`'s coverage gate,
+  // step 9's coverage-drift report) — a staging host's resolution overwriting it would
+  // corrupt that fact with something learned from a different server. `upsertSite`
+  // writes all eleven columns, nine of which are the curation overlay's (PRD §3) and
+  // none of which this command owns, so a blind read-modify-write on every crawl is a
+  // wider write than the one fact learned here.
   const crawled =
-    resolved === registryWas
-      ? site
-      : await upsertSite(pool, { ...site, truthSource: resolved });
+    env === "prod" && resolved !== registryWas
+      ? await upsertSite(pool, { ...site, truthSource: resolved })
+      : site;
 
   const seeds = crawlSeeds(truth);
   progress(
-    `crawling ${site.canonicalHost}: ${seeds.urls.length} inventory URL(s) at ` +
+    `crawling ${hosts.canonicalHost}: ${seeds.urls.length} inventory URL(s) at ` +
       `${site.rateLimit} req/s…`,
   );
+  // `crawl`'s own `seedProblem` checks that `truthSource` and the seed list agree
+  // (006_truth_source.sql's invariant) — a check about *this run's* resolution, not
+  // about the registry row. For a stage crawl that resolution is deliberately not
+  // written back (above), so it is given here instead, in memory only: `crawled.id` is
+  // unchanged, and `analyse` afterward reads the site fresh from the database and sees
+  // the real, untouched `truthSource`.
+  const crawlSite = env === "stage" ? { ...crawled, truthSource: resolved } : crawled;
   // A partial crawl throws (`PartialCrawlError`) rather than returning, so there is no
   // branch here that could carry a subset of a site into the analysis.
-  const result = await crawl(pool, crawled, seeds, deps.crawl ?? {});
+  const result = await crawl(pool, crawlSite, seeds, deps.crawl ?? {}, env);
 
   progress(`analysing crawl ${result.crawlId}: ${result.pages} page(s)…`);
   const metrics = await analyse(pool, result.crawlId);
@@ -111,7 +136,11 @@ export async function runCrawlCommand(
 
   const report: CrawlReport = {
     siteId: site.siteId,
-    canonicalHost: site.canonicalHost,
+    // The host this run actually crawled — prod's canonical host, or the stage host
+    // under `--stage` — not necessarily `site.canonicalHost`, which the report must not
+    // claim to describe when this run never fetched a single page of it.
+    canonicalHost: hosts.canonicalHost,
+    env,
     truth: {
       kind: truth.kind,
       registryWas,
