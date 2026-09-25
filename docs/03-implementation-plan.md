@@ -996,11 +996,16 @@ such site in the registry) is 404; any other refusal from `runReportCommand` (no
 crawl yet, no `crawl_metrics` row, a stored-numbers disagreement) is 409 — a true fact
 about the site's current state, not a server failure.
 
-## Step 12 — `web` (Astro) — L
+## Step 12 — `web` (Astro) — L — **done**
 
 Tables first (orphans, soft orphans, broken links by blast radius), then treemap, then
 distribution charts on TanStack Charts. Both audiences, one data layer, two vocabularies
 (PRD §9). No node-link graph in this step.
+
+**Done.** All of PRD §9's five primary views are built on the shared report/db data
+layer and linked from each site's page: sorted tables (orphans, broken links), the
+URL-hierarchy treemap (icicle, coloured by orphan ratio), the section→section matrix,
+distribution charts (TanStack Charts), and the ego network (step 14).
 
 ## Step 13 — diffs, history, notifications — M — **done**
 
@@ -1030,10 +1035,17 @@ into `crawl_metrics` beyond what `analyse` already wrote at crawl time — the p
 "then roll up to `crawl_metrics`" is already satisfied by every complete crawl getting
 its own `crawl_metrics` row, so pruning page/link rows loses no metric.
 
-## Step 14 — ego network; staging — M
+## Step 14 — ego network; staging — M — **done**
 
 Node-link at ~50 nodes, 1–2 hops, plain SVG, as a drill-down. Staging becomes a config
 flag on the existing crawl path.
+
+**Done.** `/sites/:slug/ego/` centres on a page, walks 1–2 hops (toggle), direction
+toggle (both/out/in), truncated deterministically past ~50 nodes, plus a table view
+alongside the SVG. Edges are kept only when they step exactly one hop toward or away
+from the centre, so same-hop peer links don't draw noise. `link-graph crawl <site-id>
+--stage` crawls the stage host via `siteHosts`, without ever writing
+`sites.truth_source` from a stage resolution.
 
 ---
 
