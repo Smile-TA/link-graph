@@ -55,6 +55,7 @@ export function buildEgoNetwork(
   links: readonly LinkRow[],
   centerPageId: number,
   direction: EgoDirection = "both",
+  maxHops: 1 | 2 = 2,
 ): EgoNetwork {
   const pageById = new Map(pages.map((page) => [page.id, page]));
   if (!pageById.has(centerPageId)) {
@@ -81,9 +82,11 @@ export function buildEgoNetwork(
 
   const hop1 = neighborsOf(centerPageId);
   const hop2 = new Set<number>();
-  for (const id of hop1) {
-    for (const neighbor of neighborsOf(id)) {
-      if (neighbor !== centerPageId && !hop1.has(neighbor)) hop2.add(neighbor);
+  if (maxHops === 2) {
+    for (const id of hop1) {
+      for (const neighbor of neighborsOf(id)) {
+        if (neighbor !== centerPageId && !hop1.has(neighbor)) hop2.add(neighbor);
+      }
     }
   }
 

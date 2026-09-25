@@ -55,14 +55,16 @@ if (centerPage === null) {
 const rawDir = Astro.url.searchParams.get("dir");
 const dir: EgoDirection = rawDir === "out" || rawDir === "in" ? rawDir : "both";
 
-const network = buildEgoNetwork(pages, links, centerPage.id, dir);
+const hops: 1 | 2 = Astro.url.searchParams.get("hops") === "1" ? 1 : 2;
+
+const network = buildEgoNetwork(pages, links, centerPage.id, dir, hops);
 const WIDTH = 720;
 const HEIGHT = 720;
 const positioned = layoutEgoNetwork(network, WIDTH, HEIGHT);
 const byId = new Map(positioned.map((node) => [node.pageId, node]));
 
-const egoUrl = (path: string, forDir: EgoDirection = dir) =>
-  `/sites/${site.siteId}/ego/?path=${encodeURIComponent(path)}&dir=${forDir}`;
+const egoUrl = (path: string, forDir: EgoDirection = dir, forHops: 1 | 2 = hops) =>
+  `/sites/${site.siteId}/ego/?path=${encodeURIComponent(path)}&dir=${forDir}&hops=${forHops}`;
 const HOP_COLOR = { 0: "#1d4ed8", 1: "#3b7a57", 2: "#8a8f98" } as const;
 const RADIUS = { 0: 8, 1: 5, 2: 5 } as const;
 const DIR_LABEL = { both: "both directions", out: "outbound only", in: "inbound only" } as const;
@@ -113,6 +115,14 @@ function shortenToRadius(
       {(["both", "out", "in"] as const).map((option) => (
         <a href={egoUrl(centerPage.path, option)} class:list={{ current: option === dir }}>
           {DIR_LABEL[option]}
+        </a>
+      ))}
+    </p>
+    <p class="dir-toggle">
+      Hops:
+      {([1, 2] as const).map((option) => (
+        <a href={egoUrl(centerPage.path, dir, option)} class:list={{ current: option === hops }}>
+          {option}
         </a>
       ))}
     </p>

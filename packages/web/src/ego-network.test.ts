@@ -96,6 +96,11 @@ describe("buildEgoNetwork", () => {
     expect(network.nodes.map((n) => n.pageId).sort()).toEqual([1, 5]);
   });
 
+  it("stops at hop 1 when maxHops is 1", () => {
+    const network = buildEgoNetwork(pages, links, 1, "both", 1);
+    expect(network.nodes.map((n) => n.pageId).sort()).toEqual([1, 2, 5]);
+  });
+
   it("keeps the center and every hop-1 node, trimming only hop-2 to stay near 50", () => {
     // Center linked to 20 hop-1 pages, each of which links to 5 more hop-2 pages —
     // 20 + 100 hop-2 candidates, far over the cap.
