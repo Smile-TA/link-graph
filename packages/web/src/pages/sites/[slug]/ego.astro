@@ -94,6 +94,8 @@ function shortenToRadius(
       .node a { cursor: pointer; }
       .dir-toggle a { margin-right: 0.5em; }
       .dir-toggle a.current { font-weight: bold; text-decoration: none; color: #222; }
+      table { border-collapse: collapse; margin-top: 1em; }
+      th, td { border: 1px solid #ddd; padding: 0.25em 0.6em; text-align: left; }
     </style>
   </head>
   <body>
@@ -154,5 +156,21 @@ function shortenToRadius(
         </g>
       ))}
     </svg>
+    <table>
+      <thead>
+        <tr><th>Hop</th><th>Path</th><th>Class</th></tr>
+      </thead>
+      <tbody>
+        {[...network.nodes]
+          .sort((a, b) => a.hop - b.hop || a.path.localeCompare(b.path))
+          .map((node) => (
+            <tr>
+              <td>{node.hop}</td>
+              <td><a href={egoUrl(node.path)}>{node.path}</a></td>
+              <td>{node.class ?? "not yet classified"}</td>
+            </tr>
+          ))}
+      </tbody>
+    </table>
   </body>
 </html>
