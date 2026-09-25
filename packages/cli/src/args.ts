@@ -35,12 +35,13 @@ export type Invocation =
   | { readonly kind: "report"; readonly siteId: string }
   | { readonly kind: "registry-sync" }
   | { readonly kind: "registry-report" }
+  | { readonly kind: "migrate" }
   | { readonly kind: "help" }
   | { readonly kind: "usage-error"; readonly problem: string };
 
 const HINT =
-  "usage: link-graph crawl <site-id> [--stage] | note <site-id> <kind> <subject> " +
-  "--intentional|--acknowledged -m <note> | report <site-id> | " +
+  "usage: link-graph migrate | crawl <site-id> [--stage] | note <site-id> <kind> " +
+  "<subject> --intentional|--acknowledged -m <note> | report <site-id> | " +
   "registry sync|report (see --help)";
 
 /**
@@ -68,6 +69,7 @@ export function parseArgs(argv: readonly string[]): Invocation {
   if (command === "report") return oneSite(command, argv);
   if (command === "note") return note(argv);
   if (command === "registry") return registry(argv);
+  if (command === "migrate") return noArgs(command, argv);
   return usageError(`unknown command ${quote(command)}`);
 }
 
@@ -234,6 +236,15 @@ function registry(argv: readonly string[]): Invocation {
     return usageError(`unexpected argument ${quote(extra)} — registry ${sub} takes none`);
   }
   return { kind: sub === "sync" ? "registry-sync" : "registry-report" };
+}
+
+/** `migrate`: no positionals, no options. */
+function noArgs(command: "migrate", argv: readonly string[]): Invocation {
+  const [, extra] = argv;
+  if (extra !== undefined) {
+    return usageError(`unexpected argument ${quote(extra)} — ${command} takes no arguments`);
+  }
+  return { kind: command };
 }
 
 function isFindingKind(value: string): value is FindingKind {

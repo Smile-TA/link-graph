@@ -11,7 +11,7 @@
  * tier can run the whole command — argv, pool, crawl, report, code — and read what a
  * person would have seen. `bin.ts` is the four lines that turn it into a process.
  */
-import { createPool, databaseUrl } from "@link-graph/db";
+import { createPool, databaseUrl, runMigrations } from "@link-graph/db";
 import type { Pool } from "pg";
 import { parseArgs } from "./args.js";
 import {
@@ -44,6 +44,8 @@ export interface Io {
 const USAGE = `link-graph — orphan and link analysis for the estate
 
 Usage:
+  link-graph migrate           apply every migration in packages/db/migrations that
+                               has not run yet against DATABASE_URL. Safe to run again
   link-graph crawl <site-id> [--stage]
                                resolve the site's truth source, crawl it, analyse it,
                                and print the orphan table. --stage crawls the site's
@@ -130,6 +132,15 @@ export async function main(
   try {
     pool = connect(io.env, io);
     const now = deps.now ?? (() => new Date());
+    if (invocation.kind === "migrate") {
+      const applied = await runMigrations(pool);
+      io.out(
+        applied.length === 0
+          ? "no new migrations"
+          : `applied: ${applied.join(", ")}`,
+      );
+      return EXIT.ok;
+    }
     if (invocation.kind === "report") {
       const report = await runReportCommand(pool, invocation.siteId);
       io.out(formatSiteReport(report, now()));

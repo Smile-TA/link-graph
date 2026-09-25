@@ -293,3 +293,13 @@ describe("parseArgs: registry", () => {
     );
   });
 });
+
+describe("parseArgs: migrate", () => {
+  it("reads migrate, with no arguments", () => {
+    expect(parseArgs(["migrate"])).toEqual({ kind: "migrate" });
+  });
+
+  it("refuses an extra argument", () => {
+    expect(problem(parseArgs(["migrate", "extra"]))).toMatch(/unexpected argument "extra"/);
+  });
+});
