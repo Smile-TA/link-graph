@@ -101,6 +101,14 @@ describe("buildEgoNetwork", () => {
     expect(network.nodes.map((n) => n.pageId).sort()).toEqual([1, 2, 5]);
   });
 
+  it("drops peer edges between two nodes at the same hop", () => {
+    // 2 and 5 are both hop-1 neighbours of the center; a link between them is a
+    // sibling edge that never touches the center and should not be drawn.
+    const withPeerLink = [...links, link(8, { fromPageId: 2, toPageId: 5 })];
+    const network = buildEgoNetwork(pages, withPeerLink, 1, "both", 1);
+    expect(network.edges).not.toContainEqual({ from: 2, to: 5 });
+  });
+
   it("keeps the center and every hop-1 node, trimming only hop-2 to stay near 50", () => {
     // Center linked to 20 hop-1 pages, each of which links to 5 more hop-2 pages —
     // 20 + 100 hop-2 candidates, far over the cap.

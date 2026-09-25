@@ -114,7 +114,13 @@ export function buildEgoNetwork(
   const edgeKeys = new Set<string>();
   const edges: EgoEdge[] = [];
   for (const link of internal) {
-    if (!hopOf.has(link.fromPageId) || !hopOf.has(link.toPageId as number)) continue;
+    const fromHop = hopOf.get(link.fromPageId);
+    const toHop = hopOf.get(link.toPageId as number);
+    if (fromHop === undefined || toHop === undefined) continue;
+    // Only a step toward or away from the centre — same-hop peer links (two hop-1
+    // pages linking to each other, say) don't touch the focused page, so they'd add
+    // noise without showing any actual path back to it.
+    if (Math.abs(fromHop - toHop) !== 1) continue;
     const key = `${link.fromPageId}->${link.toPageId as number}`;
     if (edgeKeys.has(key)) continue;
     edgeKeys.add(key);
