@@ -8,7 +8,7 @@ import type { CrawlJobData } from "./queues.js";
  * `002_crawls.sql`), and phase 1 never writes `stage`. Monday 03:00, off-peak and clear
  * of any human's Monday morning.
  */
-const WEEKLY_CRON = "0 3 * * 1";
+const WEEKLY_CRON = "0 3 * * 0";
 
 /**
  * Registers one BullMQ job scheduler per enabled site, keyed on the site id. Idempotent
