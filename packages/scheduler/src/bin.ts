@@ -10,6 +10,7 @@ import type { Worker } from "bullmq";
 import {
   createQueues,
   redisConnection,
+  redisUrl,
   scheduleWeeklyCrawls,
   createCrawlWorker,
   createLinkcheckWorker,
@@ -17,7 +18,7 @@ import {
 import type { LinkcheckJobData } from "./queues.js";
 
 const pool = createPool(databaseUrl());
-const connection = redisConnection(process.env["REDIS_URL"] ?? "redis://localhost:6379");
+const connection = redisConnection(redisUrl());
 const queues = createQueues(connection);
 
 const crawlWorker = createCrawlWorker(pool, connection, queues.linkcheck, {});

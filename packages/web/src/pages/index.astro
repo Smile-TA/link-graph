@@ -1,8 +1,22 @@
 ---
-import { listSites } from "@link-graph/db";
+import { listCrawlSummaries, listSites } from "@link-graph/db";
+import { listNextCrawlTimes } from "@link-graph/scheduler";
 import { pool } from "../db";
+import { queues } from "../queues";
 
-const sites = await listSites(pool);
+// Three independent reads, not one join: `listCrawlSummaries` is Postgres,
+// `listNextCrawlTimes` is Redis, and neither can fail because the other did — a Redis
+// blip must still render the sites list with its crawl history (docs/notes.md item 6).
+const [sites, summaries, nextRuns] = await Promise.all([
+  listSites(pool),
+  listCrawlSummaries(pool),
+  listNextCrawlTimes(queues.crawl),
+]);
+const summaryBySiteId = new Map(summaries.map((s) => [s.siteId, s]));
+
+function formatDate(date: Date | null | undefined): string {
+  return date === null || date === undefined ? "—" : date.toISOString().slice(0, 16).replace("T", " ");
+}
 ---
 <html lang="en">
   <head>
@@ -11,12 +25,31 @@ const sites = await listSites(pool);
   </head>
   <body>
     <h1>Sites</h1>
-    <ul>
-      {sites.map((site) => (
-        <li>
-          <a href={`/sites/${site.siteId}/`}>{site.siteId}</a> — {site.canonicalHost}
-        </li>
-      ))}
-    </ul>
+    <table>
+      <thead>
+        <tr>
+          <th>site</th>
+          <th>host</th>
+          <th>last crawl</th>
+          <th>crawls</th>
+          <th>next crawl</th>
+        </tr>
+      </thead>
+      <tbody>
+        {sites.map((site) => {
+          const summary = summaryBySiteId.get(site.id);
+          const next = nextRuns.get(site.siteId);
+          return (
+            <tr>
+              <td><a href={`/sites/${site.siteId}/`}>{site.siteId}</a></td>
+              <td>{site.canonicalHost}</td>
+              <td>{formatDate(summary?.lastFinishedAt)}</td>
+              <td>{summary?.completeCrawlCount ?? 0}</td>
+              <td>{site.enabled ? formatDate(next) : "disabled"}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   </body>
 </html>

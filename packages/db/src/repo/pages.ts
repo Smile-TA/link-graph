@@ -139,6 +139,40 @@ export async function listPages(db: Queryable, crawlId: number): Promise<PageRow
   return rows;
 }
 
+export interface PagedResult<T> {
+  readonly rows: readonly T[];
+  /** Every row `crawl_id` has, not just this page's — the pager's denominator. */
+  readonly total: number;
+}
+
+/**
+ * One page of a crawl's `pages`, ordered the same way `listPages` is (docs/notes.md
+ * item 11's "all pages list") — a separate function rather than an optional `limit` on
+ * `listPages`, because every existing caller of that one (analyse, the fixture loader)
+ * needs the whole crawl and would have to remember to pass "no limit" forever.
+ * 60,274 rows on the largest crawl measured (2026-09-28) is exactly the count an
+ * unpaginated page load must never render at once.
+ */
+export async function listPagesPage(
+  db: Queryable,
+  crawlId: number,
+  limit: number,
+  offset: number,
+): Promise<PagedResult<PageRow>> {
+  const [{ rows }, { rows: countRows }] = await Promise.all([
+    db.query<PageRow>(
+      `SELECT ${PAGE_COLUMNS} FROM pages WHERE crawl_id = $1
+       ORDER BY url_normalized LIMIT $2 OFFSET $3`,
+      [crawlId, limit, offset],
+    ),
+    db.query<{ total: number }>(
+      `SELECT count(*)::int AS total FROM pages WHERE crawl_id = $1`,
+      [crawlId],
+    ),
+  ]);
+  return { rows, total: countRows[0]?.total ?? 0 };
+}
+
 /**
  * One page by its URL within a crawl — the depth root lookup (step 4). `(crawl_id,
  * url_normalized)` is unique, so this returns at most one row.

@@ -1,6 +1,6 @@
-export { createQueues, redisConnection, QUEUE_NAMES } from "./queues.js";
+export { createQueues, redisConnection, redisUrl, QUEUE_NAMES } from "./queues.js";
 export type { CrawlJobData, LinkcheckJobData, Queues, QueueName } from "./queues.js";
-export { scheduleWeeklyCrawls } from "./schedule.js";
+export { scheduleWeeklyCrawls, listNextCrawlTimes } from "./schedule.js";
 export {
   createWorkers,
   createCrawlWorker,

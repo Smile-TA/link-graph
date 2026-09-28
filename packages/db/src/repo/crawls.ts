@@ -172,6 +172,32 @@ export async function listCompleteCrawlIds(
   return rows.map((row) => row.id);
 }
 
+export interface CrawlSummary {
+  readonly siteId: number;
+  /** How many complete, prod crawls this site has — the sites list's own count. */
+  readonly completeCrawlCount: number;
+  /** `null` for a site with no complete crawl yet. */
+  readonly lastFinishedAt: Date | null;
+}
+
+/**
+ * One row per site with at least one complete crawl — the sites list's "last crawl /
+ * how many crawls" columns (docs/notes.md item 6), read as one aggregate query rather
+ * than `listCompleteCrawlIds` called once per site: the sites list renders all ~164
+ * sites at once, and 164 round trips for a count and a max is the N+1 this function
+ * exists to avoid.
+ */
+export async function listCrawlSummaries(db: Queryable): Promise<CrawlSummary[]> {
+  const { rows } = await db.query<CrawlSummary>(
+    `SELECT site_id AS "siteId", count(*)::int AS "completeCrawlCount",
+            max(finished_at) AS "lastFinishedAt"
+     FROM crawls
+     WHERE status = 'complete' AND env = 'prod'
+     GROUP BY site_id`,
+  );
+  return rows;
+}
+
 /**
  * Drops a crawl's row-level detail (PRD §7 retention): its `pages` rows, which cascades
  * to their `links` rows (`002_crawls.sql`). `crawls`, `crawl_metrics` and `crawl_diffs`

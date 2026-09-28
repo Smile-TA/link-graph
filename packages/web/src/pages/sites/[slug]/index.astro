@@ -1,6 +1,8 @@
 ---
 import { runReportCommand, UsageError } from "@link-graph/cli";
+import { listExternalLinksForCrawl, listPagesPage } from "@link-graph/db";
 import FindingTable from "../../../components/FindingTable.astro";
+import Pager from "../../../components/Pager.astro";
 import { pool } from "../../../db";
 import { brokenEvidence, orphanEvidence } from "../../../render";
 
@@ -15,6 +17,19 @@ try {
   const message = error instanceof Error ? error.message : String(error);
   return new Response(message, { status, headers: { "content-type": "text/plain" } });
 }
+
+// 50 rows/page: small enough that even the 7,352-external-link crawl measured
+// 2026-09-28 never renders more than that at once, without needing a second
+// dependency (tanstack-table's client-side paging is Phase 5's job, for the sites
+// list; these two are plain SSR pages with no client interactivity yet).
+const PAGE_SIZE = 50;
+const extPage = Math.max(1, Number(Astro.url.searchParams.get("extPage") ?? "1") || 1);
+const pagesPage = Math.max(1, Number(Astro.url.searchParams.get("pagesPage") ?? "1") || 1);
+const crawlId = report.metrics.crawlId;
+const [externalLinks, allPages] = await Promise.all([
+  listExternalLinksForCrawl(pool, crawlId, PAGE_SIZE, (extPage - 1) * PAGE_SIZE),
+  listPagesPage(pool, crawlId, PAGE_SIZE, (pagesPage - 1) * PAGE_SIZE),
+]);
 ---
 <html lang="en">
   <head>
@@ -49,5 +64,70 @@ try {
       renderEvidence={brokenEvidence}
       siteId={report.siteId}
     />
+
+    <section>
+      <h2>External links ({externalLinks.total})</h2>
+      <Pager
+        page={extPage}
+        pageSize={PAGE_SIZE}
+        total={externalLinks.total}
+        pageParam="extPage"
+        currentUrl={Astro.url}
+      />
+      {externalLinks.rows.length === 0 ? (
+        <p>(none)</p>
+      ) : (
+        <table>
+          <thead>
+            <tr><th>url</th><th>status</th><th>last checked</th><th>note</th></tr>
+          </thead>
+          <tbody>
+            {externalLinks.rows.map((link) => (
+              <tr>
+                <td><a href={link.urlNormalized} target="_blank" rel="noopener noreferrer">{link.urlNormalized}</a></td>
+                <td>{link.lastChecked === null ? "not yet checked" : link.unverified ? "unverified" : (link.statusCode ?? "—")}</td>
+                <td>{link.lastChecked === null ? "—" : link.lastChecked.toISOString().slice(0, 16).replace("T", " ")}</td>
+                <td>{link.detail ?? ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+
+    <section>
+      <h2>All pages ({allPages.total})</h2>
+      <Pager
+        page={pagesPage}
+        pageSize={PAGE_SIZE}
+        total={allPages.total}
+        pageParam="pagesPage"
+        currentUrl={Astro.url}
+      />
+      {allPages.rows.length === 0 ? (
+        <p>(none)</p>
+      ) : (
+        <table>
+          <thead>
+            <tr><th>path</th><th>status</th><th>class</th></tr>
+          </thead>
+          <tbody>
+            {allPages.rows.map((page) => (
+              <tr>
+                <td>
+                  <a href={`/sites/${report.siteId}/ego/?path=${encodeURIComponent(page.urlNormalized)}`}>
+                    {page.path}
+                  </a>
+                  {" "}
+                  <a href={page.urlNormalized} target="_blank" rel="noopener noreferrer">↗</a>
+                </td>
+                <td>{page.statusCode ?? "—"}</td>
+                <td>{page.class ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   </body>
 </html>

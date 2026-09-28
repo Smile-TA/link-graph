@@ -24,6 +24,19 @@ export function redisConnection(url: string): ConnectionOptions {
   return { url, maxRetriesPerRequest: null };
 }
 
+/**
+ * `REDIS_URL`, or the local docker-compose service — the same fallback shape
+ * `packages/db`'s `databaseUrl()` uses, and for the same reason: a fresh checkout
+ * running `docker compose up` should work with no `.env` file. Centralized here
+ * rather than left as the inline `process.env["REDIS_URL"] ?? "redis://localhost:6379"`
+ * `bin.ts` used to repeat, now that a second caller (the web dashboard's "next crawl"
+ * column, docs/notes.md item 6) needs the identical fallback.
+ */
+export function redisUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env["REDIS_URL"]?.trim();
+  return configured === undefined || configured === "" ? "redis://localhost:6379" : configured;
+}
+
 export interface Queues {
   readonly crawl: Queue<CrawlJobData>;
   readonly linkcheck: Queue<LinkcheckJobData>;

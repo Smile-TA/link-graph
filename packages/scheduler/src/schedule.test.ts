@@ -2,7 +2,7 @@ import type { SiteRow } from "@link-graph/db";
 import type { Queue } from "bullmq";
 import { describe, expect, it, vi } from "vitest";
 import type { CrawlJobData } from "./queues.js";
-import { scheduleWeeklyCrawls } from "./schedule.js";
+import { listNextCrawlTimes, scheduleWeeklyCrawls } from "./schedule.js";
 
 function site(siteId: string, enabled: boolean): SiteRow {
   return {
@@ -18,6 +18,7 @@ function site(siteId: string, enabled: boolean): SiteRow {
     sampleCeiling: null,
     rateLimit: 1,
     ignorePaths: [],
+    redirectTargetHost: null,
   };
 }
 
@@ -40,7 +41,7 @@ describe("scheduleWeeklyCrawls", () => {
     expect(result).toEqual({ scheduled: ["a", "b"], skipped: [] });
     expect(upsertJobScheduler).toHaveBeenCalledWith(
       "a",
-      { pattern: "0 3 * * 1" },
+      { pattern: "0 3 * * 0" },
       { data: { siteId: "a" } },
     );
     expect(upsertJobScheduler).toHaveBeenCalledTimes(2);
@@ -64,14 +65,58 @@ describe("scheduleWeeklyCrawls", () => {
     expect(upsertJobScheduler).toHaveBeenNthCalledWith(
       1,
       "a",
-      { pattern: "0 3 * * 1" },
+      { pattern: "0 3 * * 0" },
       { data: { siteId: "a" } },
     );
     expect(upsertJobScheduler).toHaveBeenNthCalledWith(
       2,
       "a",
-      { pattern: "0 3 * * 1" },
+      { pattern: "0 3 * * 0" },
       { data: { siteId: "a" } },
     );
+  });
+});
+
+describe("listNextCrawlTimes", () => {
+  it("maps each scheduler's key to its next-run time", async () => {
+    const getJobSchedulers = vi.fn().mockResolvedValue([
+      { key: "a", name: "a", next: 1791082800000 },
+      { key: "b", name: "b", next: 1791687600000 },
+    ]);
+    const queue = { getJobSchedulers } as unknown as Pick<
+      Queue<CrawlJobData>,
+      "getJobSchedulers"
+    >;
+
+    const next = await listNextCrawlTimes(queue);
+
+    expect(getJobSchedulers).toHaveBeenCalledWith(0, -1);
+    expect(next.get("a")).toEqual(new Date(1791082800000));
+    expect(next.get("b")).toEqual(new Date(1791687600000));
+    expect(next.size).toBe(2);
+  });
+
+  it("omits a scheduler with no next run rather than defaulting it to a date", async () => {
+    const getJobSchedulers = vi
+      .fn()
+      .mockResolvedValue([{ key: "no-next", name: "no-next" }]);
+    const queue = { getJobSchedulers } as unknown as Pick<
+      Queue<CrawlJobData>,
+      "getJobSchedulers"
+    >;
+
+    const next = await listNextCrawlTimes(queue);
+
+    expect(next.has("no-next")).toBe(false);
+  });
+
+  it("returns an empty map when nothing is scheduled", async () => {
+    const getJobSchedulers = vi.fn().mockResolvedValue([]);
+    const queue = { getJobSchedulers } as unknown as Pick<
+      Queue<CrawlJobData>,
+      "getJobSchedulers"
+    >;
+
+    expect((await listNextCrawlTimes(queue)).size).toBe(0);
   });
 });

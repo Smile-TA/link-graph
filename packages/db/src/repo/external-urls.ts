@@ -116,6 +116,59 @@ export async function listExternalUrlsDue(
   return rows.map((row) => row.url);
 }
 
+export interface ExternalLinkRow {
+  readonly urlNormalized: string;
+  /** `null` = never checked (linkcheck hasn't reached it yet, or it isn't due). */
+  readonly lastChecked: Date | null;
+  readonly statusCode: number | null;
+  readonly unverified: boolean;
+  readonly detail: string | null;
+}
+
+/**
+ * One page of a crawl's distinct external links, joined against `external_urls` for
+ * their check status (docs/notes.md item 11's "external links list"). A `LEFT JOIN`,
+ * not an inner one: a URL `checkExternalUrls` hasn't reached yet has no `external_urls`
+ * row at all, and dropping it here would under-report the site's external surface
+ * rather than showing it as "not yet checked" (`lastChecked: null`) — the same
+ * distinction `listExternalUrlsDue`'s own `LEFT JOIN` makes.
+ *
+ * Ordered worst-first (unverified/broken before 2xx) so the finding a reviewer wants —
+ * "what's actually wrong" — is on page one rather than somewhere past a wall of 200s;
+ * `PagedResult<PageRow>`'s `listPagesPage` above orders alphabetically instead because
+ * there every row is equally "fine", and there is no such priority to sort by.
+ */
+export async function listExternalLinksForCrawl(
+  db: Queryable,
+  crawlId: number,
+  limit: number,
+  offset: number,
+): Promise<{ rows: ExternalLinkRow[]; total: number }> {
+  const [{ rows }, { rows: countRows }] = await Promise.all([
+    db.query<ExternalLinkRow>(
+      `SELECT l.to_url_normalized AS "urlNormalized", e.last_checked AS "lastChecked",
+              e.status_code AS "statusCode", coalesce(e.unverified, false) AS unverified,
+              e.detail
+       FROM (SELECT DISTINCT to_url_normalized FROM links
+             WHERE crawl_id = $1 AND is_external) l
+       LEFT JOIN external_urls e ON e.url_normalized = l.to_url_normalized
+       ORDER BY
+         e.last_checked IS NULL DESC,        -- not-yet-checked first
+         coalesce(e.unverified, false) DESC, -- then unverified
+         e.status_code >= 400 DESC,          -- then broken
+         l.to_url_normalized
+       LIMIT $2 OFFSET $3`,
+      [crawlId, limit, offset],
+    ),
+    db.query<{ total: number }>(
+      `SELECT count(DISTINCT to_url_normalized)::int AS total
+       FROM links WHERE crawl_id = $1 AND is_external`,
+      [crawlId],
+    ),
+  ]);
+  return { rows, total: countRows[0]?.total ?? 0 };
+}
+
 /**
  * Every distinct external URL of one crawl, due or not.
  *

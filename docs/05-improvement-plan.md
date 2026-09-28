@@ -1,0 +1,226 @@
+# Improvement plan (from docs/notes.md)
+
+Phased plan grouping the items in `docs/notes.md` by theme and dependency. Bugs and
+ops reliability come first since they gate correctness of everything downstream;
+the design-system pass is explicitly deferred to last (item 18's own note).
+
+Each phase gets its own step-by-step plan (with a verification step per change)
+worked out just before that phase starts, not all up front.
+
+## Phase 1 — Crawl/registry correctness bugs
+Notes: 1, 2, 19
+
+Redirect handling in liveness probing, crash on a 301 homepage, external-linkcheck
+egress-failure false-negative. These corrupt data if left unfixed, so they gate
+everything downstream.
+
+Decisions from clarifying questions:
+
+- **Note 1 (cross-host redirect, e.g. askintegrity.com → integrity.com):** new,
+  distinct site status `alias` (not reusing `disabled`), storing the redirect target
+  host. An aliased site is still re-probed on every `registry sync` and can flip back
+  to `enabled` if the redirect disappears.
+- **Note 2 (zip.planenroll.com/ → 301 → /agent, same-host):** before deciding the
+  general handling rule, run an investigative probe: does every page on the host
+  redirect under the same prefix (e.g. `/thanks` → `/agent/thanks`), or is it just the
+  homepage? That shapes whether "follow same-host redirect for the root" is safe in
+  general or needs a smarter per-path rule.
+- **Note 19 (external-linkcheck egress failure):** use BullMQ's own job-level
+  `attempts` + `backoff` options on the linkcheck job, rather than a custom retry loop
+  inside `checkExternalUrls`. Minimal new code, reuses existing queue infra.
+
+**Done** (2026-09-28): Notes 1 and 19 implemented and verified against the real
+estate — `registry sync` now finds 10 redirect aliases including
+`askintegrity.com -> integrity.com`; linkcheck job retries via BullMQ `attempts`/
+`backoff`. Note 2's investigative probe confirmed the redirect is same-host and
+root-only (not a path-prefix pattern), so it correctly stays outside the alias
+mechanism — but the actual crash in `analyse.ts:158` ("crawl's homepage returned
+301, so reachability has no usable root") is still unfixed. **Folded into Phase 6**
+below, since it's a failed-crawl-handling problem, not a registry/liveness one.
+
+## Phase 2 — Ops reliability & visibility
+Notes: 10, 14, 4, 20, 21, 9
+
+Fix flaky `npm ci`, get the astro web package booting with docker compose, add Bull
+Board to the stack, figure out how to see a currently-running crawl, investigate Bull
+Board slowness, backfill the operations doc gaps (9b/9c overlap with 4/20).
+
+Decisions from clarifying questions:
+
+- **Note 10 (flaky `npm ci`):** no known cause yet — reproduce the worker image build
+  failure from scratch, read the actual npm error, then fix.
+- **Note 14 (astro web in compose):** full container service — add a `web` service to
+  `docker-compose.yml` with its own Dockerfile, same pattern as `worker`.
+- **Note 4 (Bull Board):** full compose service — add a `bull-board` service so it
+  starts/stops with the rest of the stack automatically, not an ad hoc command.
+- **Note 20 (see the running crawler):** this is really about worker *process*
+  liveness, not which site is active (Bull Board's Active tab already shows that) — the
+  existing health checks (`docker compose ps`, `ps aux | grep scheduler`) already cover
+  it; this phase just needs to document that clearly in the ops doc rather than build
+  anything new.
+- **Note 21 (Bull Board slow):** diagnose and fix now. Leading hypothesis: the 12 stale
+  duplicate `scheduler/src/bin.ts` host processes found and killed earlier in this
+  project (each registering its own job schedulers) may have been the cause — first
+  re-check Bull Board responsiveness now that those are gone, then dig into Redis
+  memory/key counts if it's still slow.
+
+**Done** (2026-09-28), verified end to end with a full fresh-volume `docker compose up
+-d --wait`:
+
+- **Note 10:** root cause was never npm — this network's Zscaler TLS interception had
+  no trusted CA inside `node:22-slim`, which npm 10.9.9 mangled into a useless "Exit
+  handler never called!" message. Fixed by baking `certs/zscaler-root-ca.pem` into
+  `Dockerfile.worker`'s build and runtime stages. Getting the build to actually
+  succeed for the first time then surfaced two more latent bugs, fixed in the same
+  pass: `scripts/` was never `COPY`'d into the image, and the vendored `lychee`
+  release targeted `gnu` (needs glibc 2.38+) against a base image with glibc 2.36 —
+  switched to `lychee`'s `musl` static build, which has no libc dependency. Verified
+  `npm ci`, `fetch-lychee.sh`, and `lychee --version` all work in the built image, and
+  the worker boots with linkcheck enabled (no "linkcheck disabled" fallback message).
+- **Note 14:** `Dockerfile.web` + a `web` compose service (build-then-run, same
+  pattern as the worker), serving the real sites list and a site details page against
+  live Postgres at http://localhost:4321.
+- **Note 4:** a `bull-board` compose service, plain `node:22-slim` + `npx` (no
+  dedicated Dockerfile — reuses the same CA-cert fix, mounted rather than baked in,
+  since there's nothing here to build). Bound to `127.0.0.1` only: the CLI itself
+  warns that with no auth configured, anyone reaching it can modify or delete any
+  queue's jobs, not just view them.
+- **Note 20:** no code needed — this was about worker *process* liveness, which the
+  existing `docker compose ps` / `ps aux` health checks already answer; documented
+  that clearly in the ops doc instead of building something new.
+- **Note 21:** confirmed, not just hypothesized — after killing the 12 duplicate
+  processes, Redis measured trivially small (2MB, 322 keys) and Bull Board responded
+  in single-digit milliseconds. The duplicate processes were the actual cause.
+- **Note 9 (a/b/c):** ops doc now explains why the worker process has to keep
+  running (it's the thing pulling jobs off the queues, not just a one-time scheduler
+  registration) and that it does not re-run `scheduleWeeklyCrawls` on any timer;
+  documents Bull Board; and settles 9c by pointing at the VS Code Database Client
+  extension already in use rather than adding a Postgres-side Bull Board equivalent.
+
+## Phase 3 — Scheduling tweak
+Notes: 5
+
+Change `WEEKLY_CRON` to run Sunday instead of Monday. Trivial, standalone.
+
+**Done** (2026-09-28): the `WEEKLY_CRON` value itself was already changed to Sunday
+(`0 3 * * 0`) in an earlier commit ("update cron"), before this plan existed — this
+pass just caught up the stale references that hadn't been updated with it: the test
+suite (`schedule.test.ts`, fixed in Phase 1's cleanup pass since it was blocking a
+clean test run there) and a doc comment directly above `WEEKLY_CRON` in
+`schedule.ts` that still said "Monday 03:00" over a value that was already Sunday.
+
+## Phase 4 — Web data completeness
+Notes: 6, 11, 3
+
+Sites list needs richer per-site info (last crawl, crawl count, next crawl time),
+site details page needs external-links/all-pages lists, external-link 404 checking
+needs a view. Surfacing data that exists or nearly does.
+
+Decisions from clarifying questions:
+
+- **Note 3 (external 404 checking view):** not confirmed whether it actually runs end
+  to end — investigate first (note 19's egress-failure bug suggests it does run, but
+  may be silently failing), then build the missing view once confirmed.
+- **Note 6 (next crawl time):** read BullMQ's actual scheduled next-run per site
+  (job scheduler's own repeat data), not a value computed from `WEEKLY_CRON` in
+  isolation — more accurate, reflects any per-site scheduling drift.
+- **Note 11 (external links / all pages lists):** add pagination/virtualization from
+  the start, not a plain full list — some sites in the estate are large enough for it
+  to matter.
+
+**Done** (2026-09-28), verified against live data:
+
+- **Note 3:** confirmed by investigation, not assumed — external linkcheck genuinely
+  runs and writes real results (6,129 rows in `external_urls`, 327 real 404s found on
+  integrity.com alone, distinct from the 583 unverified/blocked). The gap was purely
+  "no view", now built (below).
+- **Note 6:** sites list now shows last-crawl date, complete-crawl count
+  (`listCrawlSummaries`, one aggregate query, not 164 round trips), and next-crawl time
+  read live from BullMQ (`listNextCrawlTimes`, `getJobSchedulers`) rather than computed
+  from `WEEKLY_CRON` — a disabled site correctly shows "disabled" instead of a stale or
+  fabricated date.
+- **Note 11:** site details page now has a paginated external-links list (worst-first:
+  not-yet-checked, then broken, then 2xx) and a paginated all-pages list, 50 rows/page,
+  plain SSR query-param pagination (`?extPage=`/`?pagesPage=`) — verified against
+  integrity.com's real 643 external links (13 pages) and 2,463 pages.
+- Centralized a `redisUrl()` fallback in `packages/scheduler` (mirroring `packages/db`'s
+  `databaseUrl()`), used by both `bin.ts` and the new web-side Redis reads, so the web
+  service needed `REDIS_URL` added to its compose environment too.
+- Found and documented a real test-isolation gotcha along the way: `docker compose up`
+  running the real `worker` service races BullMQ integration tests that spin up their
+  own in-process queue consumers on the same Redis — noted in `docker-compose.yml`.
+
+## Phase 5 — Web interactivity
+Notes: 13, 17
+
+Search bar to filter the sites list, at-a-glance per-site stats (broken links count,
+unreviewed orphan count) in a sortable table. Both likely one tanstack-table effort.
+
+Decisions from clarifying questions:
+
+- **Note 13 (search bar):** text search on name/id *plus* stat-facet filters (has
+  broken links, has unreviewed orphans, disabled/alias, etc.), not text-only.
+- **Note 17 (sortable table):** client-side over all sites — 164 sites is small enough
+  to fetch once and let tanstack-table sort/filter/paginate in the browser, no new
+  server-side query surface needed.
+
+## Phase 6 — Review/debugging workflows
+Notes: 7, 16, 2 (remainder)
+
+Flesh out the orphan-page review flow (accept an orphan as OK). Develop a workflow
+for debugging failed crawls: per-page ignore-links config, retry strategy.
+
+- **Note 2 remainder (zip.planenroll.com/ → 301 → /agent crash):** Phase 1 confirmed
+  via investigative probe that the redirect is same-host and root-only (other paths
+  404 normally, not a `/thanks` → `/agent/thanks` prefix pattern) — so "follow a
+  same-host root redirect and treat the target as the reachability root" is safe as a
+  general rule here, not just a special case. Still needs the actual fix in
+  `packages/analyse/src/analyse.ts:158` (currently throws when the homepage returns
+  301, per docs/notes.md item 2's error) plus a decision on whether this belongs in
+  `analyse.ts` itself or upstream in the crawl fetch step that resolves the homepage
+  URL.
+
+Decisions from clarifying questions:
+
+- **Note 7 (orphan acceptance persistence):** an acceptance is not permanent-until-
+  reverted — if a later crawl finds the page's link structure changed meaningfully
+  (e.g. it's no longer an orphan, or context changed), re-surface it for review rather
+  than silently keeping the old acceptance.
+- **Note 16 (ignore-links config):** scoped to specific link URLs/patterns (e.g. known-
+  noisy third-party trackers) that get excluded from checking/counting wherever found
+  — not whole pages skipped from the crawl.
+
+## Phase 7 — UX polish
+Notes: 12, 8, 15
+
+Ego-page "Class" column naming or explainer header. Explain the treemap/distributions/
+section-matrix views (what insight each gives). External-link icons + aria labels +
+new-tab behavior wherever ego-network pages link out.
+
+Decisions from clarifying questions:
+
+- **Note 12 ("Class" column):** meaning not confirmed yet — find what it currently
+  represents in the ego page component/data source before proposing a rename or
+  explainer.
+- **Note 8 (view explanations):** inline on-page (an info icon/tooltip, or a short
+  intro paragraph above each chart), not a separate linked docs page — stays visible
+  without leaving the view.
+
+## Phase 8 — Design system pass
+Notes: 18
+
+Claude Design with the integrity.com design system, front-end look and feel. Explicitly
+deferred by the user to later, once usage limits reset. Not started until asked.
+
+---
+
+## Status
+
+- [x] Phase 1 (note 2's crash fix folded into Phase 6)
+- [x] Phase 2
+- [x] Phase 3
+- [x] Phase 4
+- [ ] Phase 5
+- [ ] Phase 6
+- [ ] Phase 7
+- [ ] Phase 8 (deferred — do not start unprompted)
