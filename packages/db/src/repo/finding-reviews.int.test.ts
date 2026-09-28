@@ -42,6 +42,7 @@ async function newSite(): Promise<SiteRow> {
     sampleCeiling: null,
     rateLimit: 1,
     ignorePaths: [],
+    redirectTargetHost: null,
   });
 }
 

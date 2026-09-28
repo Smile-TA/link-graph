@@ -72,6 +72,7 @@ describe("the registry pipeline against the live clone and real Postgres", () =>
         serves: probe.serves,
         platformSig: probe.platformSig,
         versionTxt: probe.versionTxt,
+        redirectsToHost: probe.redirectsToHost,
       });
       // Reported, not asserted strictly true/false: these are real hosts and the
       // point of this test is that the probe runs against them and produces a

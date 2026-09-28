@@ -28,6 +28,7 @@ export async function registryDriftReport(db: Queryable): Promise<CoverageDrift>
       siteId: s.siteId,
       canonicalHost: s.canonicalHost,
       enabled: s.enabled,
+      redirectTargetHost: s.redirectTargetHost,
     })),
     (siteId) => latest.get(siteId) ?? null,
   );
@@ -41,6 +42,11 @@ export function formatDriftReport(drift: CoverageDrift): string {
     "",
     `Configured but dead (${drift.configuredButDead.length}):`,
     ...drift.configuredButDead.map((s) => `  ${s.siteId}  ${s.canonicalHost}`),
+    "",
+    `Redirect aliases (${drift.redirectAliases.length}):`,
+    ...drift.redirectAliases.map(
+      (s) => `  ${s.siteId}  ${s.canonicalHost} -> ${s.redirectTargetHost}`,
+    ),
   );
   return lines.join("\n");
 }

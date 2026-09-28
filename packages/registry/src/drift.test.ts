@@ -6,10 +6,15 @@ const NO_DNS: DriftProbe = { dnsOk: false, serves: false, platformSig: false };
 const REFUSED: DriftProbe = { dnsOk: true, serves: false, platformSig: false };
 const NO_SIGNATURE: DriftProbe = { dnsOk: true, serves: true, platformSig: false };
 
-const site = (siteId: string, enabled: boolean): DriftSite => ({
+const site = (
+  siteId: string,
+  enabled: boolean,
+  redirectTargetHost: string | null = null,
+): DriftSite => ({
   siteId,
   canonicalHost: `${siteId}.example`,
   enabled,
+  redirectTargetHost,
 });
 
 describe("classifyDrift", () => {
@@ -56,6 +61,22 @@ describe("classifyDrift", () => {
 
   it("no probe at all: neither bucket, never probed yet", () => {
     const drift = classifyDrift([site("never-synced.com", true)], () => null);
+    expect(drift.deployedButUnmonitored).toEqual([]);
+    expect(drift.configuredButDead).toEqual([]);
+  });
+
+  it("a redirect target host is a redirect alias, not deployed-but-unmonitored, even though it's live and disabled", () => {
+    const drift = classifyDrift(
+      [site("askintegrity.com", false, "integrity.com")],
+      () => LIVE,
+    );
+    expect(drift.redirectAliases).toEqual([
+      {
+        siteId: "askintegrity.com",
+        canonicalHost: "askintegrity.com.example",
+        redirectTargetHost: "integrity.com",
+      },
+    ]);
     expect(drift.deployedButUnmonitored).toEqual([]);
     expect(drift.configuredButDead).toEqual([]);
   });

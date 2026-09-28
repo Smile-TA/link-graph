@@ -38,13 +38,14 @@ function fakeDb(existing: SiteRow | null): { db: Queryable; upserted: unknown[] 
           canonicalHost: "403bplan.net",
           aliases: ["403bplan.net"],
           stageHost: null,
-          enabled: true,
+          enabled: params?.[4] as boolean,
           truthSource: params?.[5] as SiteRow["truthSource"],
           crawlerMode: "http",
           crawlScope: "full",
           sampleCeiling: null,
           rateLimit: 1.0,
           ignorePaths: [],
+          redirectTargetHost: params?.[11] as string | null,
         };
         return Promise.resolve({ rows: [row as unknown as R] } as QueryResult<R>);
       }
@@ -73,7 +74,14 @@ const deps = {
   },
   probe: {
     resolveDns: () => Promise.resolve({ ok: false }),
-    fetchUrl: () => Promise.resolve({ ok: false, status: null, headers: {}, body: null }),
+    fetchUrl: () =>
+      Promise.resolve({
+        ok: false,
+        status: null,
+        headers: {},
+        body: null,
+        finalUrl: null,
+      }),
   },
 };
 
@@ -92,6 +100,7 @@ describe("syncRegistry: truthSource preservation", () => {
       sampleCeiling: null,
       rateLimit: 1.0,
       ignorePaths: [],
+      redirectTargetHost: null,
     };
     const { db } = fakeDb(existing);
 
@@ -106,5 +115,55 @@ describe("syncRegistry: truthSource preservation", () => {
     const result = await syncRegistry(db, deps);
 
     expect(result.sites[0]?.truthSource).toBeNull();
+  });
+});
+
+describe("syncRegistry: cross-host redirect aliasing", () => {
+  it("a cross-host redirect on the root probe forces enabled false and records the target host", async () => {
+    const { db } = fakeDb(null);
+    const redirectDeps = {
+      ...deps,
+      probe: {
+        resolveDns: () => Promise.resolve({ ok: true }),
+        fetchUrl: (url: string) =>
+          Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: {},
+            body: "",
+            finalUrl: url.includes("/version.txt")
+              ? url
+              : "https://integrity.com/ask-integrity/",
+          }),
+      },
+    };
+
+    const result = await syncRegistry(db, redirectDeps);
+
+    expect(result.sites[0]?.redirectTargetHost).toBe("integrity.com");
+    expect(result.sites[0]?.enabled).toBe(false);
+  });
+
+  it("a same-host redirect on the root probe leaves enabled and redirectTargetHost alone", async () => {
+    const { db } = fakeDb(null);
+    const sameHostDeps = {
+      ...deps,
+      probe: {
+        resolveDns: () => Promise.resolve({ ok: true }),
+        fetchUrl: (url: string) =>
+          Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: {},
+            body: "",
+            finalUrl: url.includes("/version.txt") ? url : "https://403bplan.net/agent",
+          }),
+      },
+    };
+
+    const result = await syncRegistry(db, sameHostDeps);
+
+    expect(result.sites[0]?.redirectTargetHost).toBeNull();
+    expect(result.sites[0]?.enabled).toBe(true);
   });
 });

@@ -35,6 +35,7 @@ const site = (siteId: string, enabled: boolean): SiteInput => ({
   sampleCeiling: null,
   rateLimit: 1.0,
   ignorePaths: [],
+  redirectTargetHost: null,
 });
 
 describe("registryDriftReport", () => {
@@ -51,6 +52,7 @@ describe("registryDriftReport", () => {
       serves: true,
       platformSig: true,
       versionTxt: "v1",
+      redirectsToHost: null,
     });
     await insertRegistryHealth(db.pool, {
       siteId: dead.id,
@@ -59,6 +61,7 @@ describe("registryDriftReport", () => {
       serves: false,
       platformSig: false,
       versionTxt: null,
+      redirectsToHost: null,
     });
     await insertRegistryHealth(db.pool, {
       siteId: healthy.id,
@@ -67,6 +70,7 @@ describe("registryDriftReport", () => {
       serves: true,
       platformSig: true,
       versionTxt: "v1",
+      redirectsToHost: null,
     });
 
     const drift = await registryDriftReport(db.pool);

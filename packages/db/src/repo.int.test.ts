@@ -26,17 +26,19 @@ import {
   findPreviousCompleteCrawl,
   insertCrawl,
   listCompleteCrawlIds,
+  listCrawlSummaries,
   pruneCrawlDetail,
 } from "./repo/crawls.js";
 import {
   countExternalUrls,
   findExternalUrl,
+  listExternalLinksForCrawl,
   listExternalUrlsDue,
   upsertExternalUrl,
   upsertExternalUrls,
 } from "./repo/external-urls.js";
 import { insertLinks } from "./repo/links.js";
-import type { PageInput } from "./repo/pages.js";
+import { listPages, listPagesPage, type PageInput } from "./repo/pages.js";
 import { insertRegistryHealth, listRegistryHealth } from "./repo/registry-health.js";
 import {
   findSiteBySlug,
@@ -91,6 +93,32 @@ afterAll(async () => {
   await db.drop();
 });
 
+/**
+ * A dedicated site, isolated from the shared fixture `siteId` above — several tests
+ * below need to insert their own extra crawls, and doing that against the shared site
+ * would shift the crawl-id sequence out from under "step 13"'s ordinal-crawl-id
+ * assertions, which run later in this same file against that shared site.
+ */
+let siteSequence = 0;
+async function makeSite(): Promise<number> {
+  const slug = `repo-int-extra-${siteSequence++}`;
+  const site = await upsertSite(db.pool, {
+    siteId: slug,
+    canonicalHost: `${slug}.example`,
+    aliases: [`${slug}.example`],
+    stageHost: null,
+    enabled: true,
+    truthSource: "sitemap",
+    crawlerMode: "http",
+    crawlScope: "full",
+    sampleCeiling: null,
+    rateLimit: 1,
+    ignorePaths: [],
+    redirectTargetHost: null,
+  });
+  return site.id;
+}
+
 describe("sites", () => {
   it("round-trips every column, including the array ones", async () => {
     const site = await findSiteBySlug(db.pool, "integrity-com");
@@ -105,6 +133,7 @@ describe("sites", () => {
       crawlerMode: "http",
       rateLimit: 1,
       ignorePaths: ["/wp-content/"],
+      redirectTargetHost: null,
     });
   });
 
@@ -133,6 +162,7 @@ describe("sites", () => {
       sampleCeiling: null,
       rateLimit: 1,
       ignorePaths: [],
+      redirectTargetHost: null,
     });
     expect(site.truthSource).toBeNull();
   });
@@ -156,6 +186,7 @@ describe("sites", () => {
       sampleCeiling: ceiling,
       rateLimit: 1,
       ignorePaths: [],
+      redirectTargetHost: null,
     });
     await expect(upsertSite(db.pool, site("sample", null))).rejects.toThrow(
       /sites_sample_ceiling_iff_sample/,
@@ -182,6 +213,7 @@ describe("registry_health", () => {
       serves: true,
       platformSig: true,
       versionTxt: "1.6.8",
+      redirectsToHost: null,
     });
     await insertRegistryHealth(db.pool, {
       siteId,
@@ -190,6 +222,7 @@ describe("registry_health", () => {
       serves: false,
       platformSig: false,
       versionTxt: null,
+      redirectsToHost: null,
     });
     const rows = await listRegistryHealth(db.pool, siteId);
     // Every boolean, not just `serves`: dns_ok and platform_sig are adjacent columns
@@ -203,6 +236,7 @@ describe("registry_health", () => {
         serves: false,
         platformSig: false,
         versionTxt: null,
+        redirectsToHost: null,
       },
       {
         siteId,
@@ -211,6 +245,7 @@ describe("registry_health", () => {
         serves: true,
         platformSig: true,
         versionTxt: "1.6.8",
+        redirectsToHost: null,
       },
     ]);
   });
@@ -284,6 +319,128 @@ describe("external_urls", () => {
     expect(
       await listExternalUrlsDue(db.pool, crawlId, new Date("2026-09-03T00:00:00.000Z")),
     ).toEqual(["https://www.integritymarketing.com/"]);
+  });
+
+  it("lists a crawl's external links paginated, worst-first, unchecked included via LEFT JOIN", async () => {
+    const crawl = await insertCompleteCrawl(db.pool, await makeSite(), new Date("2026-09-05T00:00:00Z"), {
+      pages: [
+        {
+          urlNormalized: "https://ext-links.example/",
+          path: "/",
+          postType: null,
+          statusCode: 200,
+          depth: 0,
+          inTruthSource: true,
+          indexable: true,
+          canonicalTo: null,
+          redirectTo: null,
+          class: null,
+        },
+      ],
+    });
+    const [page] = await listPages(db.pool, crawl.id);
+    await insertLinks(db.pool, crawl.id, [
+      {
+        fromPageId: page!.id,
+        toUrlNormalized: "https://ok.example/",
+        toPageId: null,
+        anchor: "ok",
+        rel: null,
+        isExternal: true,
+        isBoilerplate: null,
+        container: "main",
+        domIndex: 0,
+      },
+      {
+        fromPageId: page!.id,
+        toUrlNormalized: "https://broken.example/",
+        toPageId: null,
+        anchor: "broken",
+        rel: null,
+        isExternal: true,
+        isBoilerplate: null,
+        container: "main",
+        domIndex: 1,
+      },
+      {
+        fromPageId: page!.id,
+        toUrlNormalized: "https://never-checked.example/",
+        toPageId: null,
+        anchor: "unchecked",
+        rel: null,
+        isExternal: true,
+        isBoilerplate: null,
+        container: "main",
+        domIndex: 2,
+      },
+    ]);
+    await upsertExternalUrls(db.pool, [
+      {
+        urlNormalized: "https://ok.example/",
+        lastChecked: new Date("2026-09-05T01:00:00Z"),
+        statusCode: 200,
+        unverified: false,
+        detail: null,
+      },
+      {
+        urlNormalized: "https://broken.example/",
+        lastChecked: new Date("2026-09-05T01:00:00Z"),
+        statusCode: 404,
+        unverified: false,
+        detail: null,
+      },
+    ]);
+
+    const all = await listExternalLinksForCrawl(db.pool, crawl.id, 10, 0);
+    expect(all.total).toBe(3);
+    // Not-yet-checked first (lastChecked null), then the 404, then the 200 — worst
+    // finding on page one, per this function's own ordering comment.
+    expect(all.rows.map((r) => r.urlNormalized)).toEqual([
+      "https://never-checked.example/",
+      "https://broken.example/",
+      "https://ok.example/",
+    ]);
+    expect(all.rows[0]?.lastChecked).toBeNull();
+    expect(all.rows[1]?.statusCode).toBe(404);
+
+    const firstPage = await listExternalLinksForCrawl(db.pool, crawl.id, 2, 0);
+    expect(firstPage.rows.map((r) => r.urlNormalized)).toEqual([
+      "https://never-checked.example/",
+      "https://broken.example/",
+    ]);
+    expect(firstPage.total).toBe(3);
+    const secondPage = await listExternalLinksForCrawl(db.pool, crawl.id, 2, 2);
+    expect(secondPage.rows.map((r) => r.urlNormalized)).toEqual(["https://ok.example/"]);
+  });
+});
+
+describe("pages: listPagesPage", () => {
+  it("paginates a crawl's pages alphabetically and reports the true total", async () => {
+    const pageInput = (path: string): PageInput => ({
+      urlNormalized: `https://paginated.example${path}`,
+      path,
+      postType: null,
+      statusCode: 200,
+      depth: 0,
+      inTruthSource: true,
+      indexable: true,
+      canonicalTo: null,
+      redirectTo: null,
+      class: "linked",
+    });
+    const crawl = await insertCompleteCrawl(db.pool, await makeSite(), new Date("2026-09-06T00:00:00Z"), {
+      pages: ["/a/", "/b/", "/c/", "/d/", "/e/"].map(pageInput),
+    });
+
+    const firstPage = await listPagesPage(db.pool, crawl.id, 2, 0);
+    expect(firstPage.total).toBe(5);
+    expect(firstPage.rows.map((r) => r.path)).toEqual(["/a/", "/b/"]);
+
+    const secondPage = await listPagesPage(db.pool, crawl.id, 2, 2);
+    expect(secondPage.rows.map((r) => r.path)).toEqual(["/c/", "/d/"]);
+
+    const lastPage = await listPagesPage(db.pool, crawl.id, 2, 4);
+    expect(lastPage.rows.map((r) => r.path)).toEqual(["/e/"]);
   });
 });
 
@@ -475,6 +632,42 @@ describe("crawls truth-source counts", () => {
   it("refuses a union smaller than a source or larger than their sum", async () => {
     await expect(crawl(96, 124, 96)).rejects.toThrow(/counts_agree/);
     await expect(crawl(300, 124, 96)).rejects.toThrow(/counts_agree/);
+  });
+});
+
+describe("crawls: listCrawlSummaries", () => {
+  it("aggregates complete-crawl count and latest finished_at, per site, in one query", async () => {
+    // A dedicated site rather than the shared fixture `siteId`: other describe blocks
+    // in this file insert their own crawls against that one, and an aggregate over
+    // "every complete crawl of this site" would otherwise depend on what ran before it.
+    const site = await makeSite();
+    await insertCompleteCrawl(db.pool, site, new Date("2026-09-01T00:00:00Z"));
+    await insertCompleteCrawl(db.pool, site, new Date("2026-09-08T00:00:00Z"));
+    // A partial crawl must not count: `listCrawlSummaries` filters to `status =
+    // 'complete'`, same as `listCompleteCrawlIds` already does.
+    await insertCrawl(db.pool, {
+      siteId: site,
+      env: "prod",
+      startedAt: new Date("2026-09-10T00:00:00Z"),
+      finishedAt: null,
+      status: "partial",
+      deployedTag: null,
+      registrySha: null,
+      pagesSeen: 0,
+      wasThrottled: false,
+      truthSourceUrls: null,
+      truthSourceRestUrls: null,
+      truthSourceSitemapUrls: null,
+      taxonomies: [],
+    });
+
+    const summaries = await listCrawlSummaries(db.pool);
+    const mine = summaries.find((s) => s.siteId === site);
+    expect(mine).toEqual({
+      siteId: site,
+      completeCrawlCount: 2,
+      lastFinishedAt: new Date("2026-09-08T00:00:00Z"),
+    });
   });
 });
 

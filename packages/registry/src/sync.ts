@@ -51,12 +51,23 @@ export async function syncRegistry(
       // upserting keeps a sync from silently resetting it to null on every re-run —
       // sync's job is registry facts, not truth-source resolution.
       const existing = await findSiteBySlug(db, input.siteId);
+      // Probed by canonical host before the upsert, not after, because a cross-host
+      // redirect (askintegrity.com → integrity.com, docs/notes.md item 1) has to
+      // override `enabled` on the very row being written — probing the already-written
+      // row would mean either a second write or a stale `enabled` for one sync cycle.
+      const probe = await probeLiveness(input.canonicalHost, deps.probe, now);
       const row = await upsertSite(db, {
         ...input,
         truthSource: existing?.truthSource ?? input.truthSource,
+        // A redirect alias is never independently crawlable, regardless of what
+        // curation says — overrides `input.enabled` rather than merging with it. Not
+        // sticky: re-derived every sync, so a redirect that disappears flips this back
+        // to whatever curation/derive would otherwise say (PRD-adjacent decision in
+        // docs/05-improvement-plan.md, "re-probed on every sync").
+        enabled: probe.redirectsToHost !== null ? false : input.enabled,
+        redirectTargetHost: probe.redirectsToHost,
       });
       sites.push(row);
-      const probe = await probeLiveness(row.canonicalHost, deps.probe, now);
       await insertRegistryHealth(db, {
         siteId: row.id,
         checkedAt: probe.checkedAt,
@@ -64,6 +75,7 @@ export async function syncRegistry(
         serves: probe.serves,
         platformSig: probe.platformSig,
         versionTxt: probe.versionTxt,
+        redirectsToHost: probe.redirectsToHost,
       });
     }
 

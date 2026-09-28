@@ -179,6 +179,7 @@ describe("007 reclassifies the rows it invalidates", () => {
       "010_non_content_provenance.sql",
       "011_finding_reviews.sql",
       "012_external_url_detail.sql",
+      "013_redirect_alias.sql",
     ]);
 
     const { rows } = await db.pool.query<{ path: string; class: string }>(

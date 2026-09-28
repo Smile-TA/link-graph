@@ -39,10 +39,28 @@ export function processCrawlJob(
 ): (data: CrawlJobData) => Promise<CrawlReport> {
   return async (data) => {
     const report = await runCrawlCommand(pool, data.siteId, () => {}, deps);
-    await linkcheckQueue.add("after-crawl", { crawlId: report.crawl.crawlId });
+    await linkcheckQueue.add(
+      "after-crawl",
+      { crawlId: report.crawl.crawlId },
+      LINKCHECK_JOB_OPTIONS,
+    );
     return report;
   };
 }
+
+/**
+ * `IncompleteLinkcheckError` (docs/notes.md item 19) fires when not one of a batch's
+ * URLs produced a usable answer — the shape of our own network egress being broken,
+ * not of every destination being dead — and deliberately writes nothing so it doesn't
+ * stamp `last_checked` and suppress a real recheck for a whole TTL window. BullMQ's own
+ * `attempts`/`backoff` retries the whole job after a delay, giving a transient egress
+ * blip a chance to clear before the TTL window is lost; a permanent egress problem
+ * still exhausts the attempts and surfaces as a failed job (ops doc §5).
+ */
+const LINKCHECK_JOB_OPTIONS = {
+  attempts: 3,
+  backoff: { type: "exponential", delay: 60_000 },
+} as const;
 
 export function processLinkcheckJob(
   pool: Pool,

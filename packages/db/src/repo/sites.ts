@@ -72,6 +72,13 @@ export interface SiteInput {
   /** Requests per second. */
   readonly rateLimit: number;
   readonly ignorePaths: readonly string[];
+  /**
+   * Non-null when the latest liveness probe found this host redirecting to a
+   * different host (PRD-adjacent: `docs/notes.md` item 1). Distinct from `enabled` —
+   * see `013_redirect_alias.sql` — and re-derived on every `registry sync`, so it goes
+   * back to `null` if the redirect disappears.
+   */
+  readonly redirectTargetHost: string | null;
 }
 
 export interface SiteRow extends SiteInput {
@@ -82,7 +89,7 @@ const COLUMNS = `id, site_id AS "siteId", canonical_host AS "canonicalHost", ali
   stage_host AS "stageHost", enabled, truth_source AS "truthSource",
   crawler_mode AS "crawlerMode", crawl_scope AS "crawlScope",
   sample_ceiling AS "sampleCeiling", rate_limit AS "rateLimit",
-  ignore_paths AS "ignorePaths"`;
+  ignore_paths AS "ignorePaths", redirect_target_host AS "redirectTargetHost"`;
 
 /**
  * Insert, or update in place when the registry slug already exists. Upsert rather
@@ -93,14 +100,15 @@ export async function upsertSite(db: Queryable, site: SiteInput): Promise<SiteRo
   const { rows } = await db.query<SiteRow>(
     `INSERT INTO sites (site_id, canonical_host, aliases, stage_host, enabled,
                         truth_source, crawler_mode, crawl_scope, sample_ceiling,
-                        rate_limit, ignore_paths)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                        rate_limit, ignore_paths, redirect_target_host)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT (site_id) DO UPDATE SET
        canonical_host = excluded.canonical_host, aliases = excluded.aliases,
        stage_host = excluded.stage_host, enabled = excluded.enabled,
        truth_source = excluded.truth_source, crawler_mode = excluded.crawler_mode,
        crawl_scope = excluded.crawl_scope, sample_ceiling = excluded.sample_ceiling,
-       rate_limit = excluded.rate_limit, ignore_paths = excluded.ignore_paths
+       rate_limit = excluded.rate_limit, ignore_paths = excluded.ignore_paths,
+       redirect_target_host = excluded.redirect_target_host
      RETURNING ${COLUMNS}`,
     [
       site.siteId,
@@ -114,6 +122,7 @@ export async function upsertSite(db: Queryable, site: SiteInput): Promise<SiteRo
       site.sampleCeiling,
       site.rateLimit,
       site.ignorePaths,
+      site.redirectTargetHost,
     ],
   );
   const row = rows[0];

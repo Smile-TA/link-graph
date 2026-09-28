@@ -9,10 +9,13 @@ export interface RegistryHealthInput {
   readonly serves: boolean;
   readonly platformSig: boolean;
   readonly versionTxt: string | null;
+  /** Non-null when this probe's root request redirected to a different host. */
+  readonly redirectsToHost: string | null;
 }
 
 const COLUMNS = `site_id AS "siteId", checked_at AS "checkedAt", dns_ok AS "dnsOk",
-  serves, platform_sig AS "platformSig", version_txt AS "versionTxt"`;
+  serves, platform_sig AS "platformSig", version_txt AS "versionTxt",
+  redirects_to_host AS "redirectsToHost"`;
 
 export async function insertRegistryHealth(
   db: Queryable,
@@ -20,8 +23,8 @@ export async function insertRegistryHealth(
 ): Promise<void> {
   await db.query(
     `INSERT INTO registry_health
-       (site_id, checked_at, dns_ok, serves, platform_sig, version_txt)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+       (site_id, checked_at, dns_ok, serves, platform_sig, version_txt, redirects_to_host)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [
       probe.siteId,
       probe.checkedAt,
@@ -29,6 +32,7 @@ export async function insertRegistryHealth(
       probe.serves,
       probe.platformSig,
       probe.versionTxt,
+      probe.redirectsToHost,
     ],
   );
 }

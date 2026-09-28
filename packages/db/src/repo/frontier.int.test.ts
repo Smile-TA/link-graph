@@ -44,6 +44,7 @@ async function newCrawl(): Promise<number> {
     sampleCeiling: null,
     rateLimit: 1,
     ignorePaths: [],
+    redirectTargetHost: null,
   });
   const crawl = await insertCrawl(db.pool, {
     siteId: site.id,

@@ -88,6 +88,7 @@ async function makeSite(overrides: Partial<SiteInput> = {}): Promise<SiteRow> {
     sampleCeiling: null,
     rateLimit: 500,
     ignorePaths: [],
+    redirectTargetHost: null,
     ...overrides,
   };
   return upsertSite(db.pool, site);

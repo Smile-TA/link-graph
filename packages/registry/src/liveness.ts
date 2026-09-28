@@ -15,6 +15,8 @@ export interface HttpProbeResult {
   readonly status: number | null;
   readonly headers: Readonly<Record<string, string>>;
   readonly body: string | null;
+  /** The URL actually served, after following redirects. `null` when the fetch failed. */
+  readonly finalUrl: string | null;
 }
 
 export interface LivenessDeps {
@@ -29,6 +31,14 @@ export interface LivenessResult {
   readonly platformSig: boolean;
   /** The body of `/version.txt` when it served 2xx, else `null`. */
   readonly versionTxt: string | null;
+  /**
+   * The host of the root probe's final URL, when it differs from the probed host — a
+   * cross-host redirect (askintegrity.com → integrity.com, `docs/notes.md` item 1).
+   * `null` when there was no redirect, the redirect stayed on the same host (a
+   * same-host root redirect like zip.planenroll.com → /agent is not this), or the root
+   * probe never resolved to a URL at all.
+   */
+  readonly redirectsToHost: string | null;
 }
 
 /**
@@ -69,18 +79,36 @@ export async function probeLiveness(
       serves: false,
       platformSig: false,
       versionTxt: null,
+      redirectsToHost: null,
     };
   }
 
   const rootProbe = await safely(() => deps.fetchUrl(`https://${host}/`));
   const serves = rootProbe.ok && rootProbe.status !== null && rootProbe.status < 500;
   const platformSig = serves && hasPlatformSignature(rootProbe.headers);
+  const redirectsToHost = crossHostRedirect(host, rootProbe.finalUrl);
 
   const versionProbe = await safely(() => deps.fetchUrl(`https://${host}/version.txt`));
   const versionTxt =
     versionProbe.ok && versionProbe.status === 200 ? (versionProbe.body ?? "") : null;
 
-  return { checkedAt, dnsOk: true, serves, platformSig, versionTxt };
+  return { checkedAt, dnsOk: true, serves, platformSig, versionTxt, redirectsToHost };
+}
+
+/**
+ * `null` unless the root probe's final URL resolved to a *different* host than the one
+ * probed — a same-host redirect (zip.planenroll.com → /agent, `docs/notes.md` item 2)
+ * is not a redirect alias, only a cross-host one is.
+ */
+function crossHostRedirect(probedHost: string, finalUrl: string | null): string | null {
+  if (finalUrl === null) return null;
+  let finalHost: string;
+  try {
+    finalHost = new URL(finalUrl).host;
+  } catch {
+    return null;
+  }
+  return finalHost.toLowerCase() === probedHost.toLowerCase() ? null : finalHost;
 }
 
 async function safely<T extends { ok: boolean }>(fn: () => Promise<T>): Promise<T> {

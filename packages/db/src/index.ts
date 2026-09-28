@@ -55,6 +55,7 @@ export {
   countCrawlRows,
   findPreviousCompleteCrawl,
   listCompleteCrawlIds,
+  listCrawlSummaries,
   pruneCrawlDetail,
   CRAWL_ENVS,
   CRAWL_STATUSES,
@@ -66,6 +67,7 @@ export type {
   CrawlRow,
   CrawlRowCounts,
   CrawlStatus,
+  CrawlSummary,
 } from "./repo/crawls.js";
 export {
   addToFrontier,
@@ -78,11 +80,12 @@ export type { FrontierCounts, FrontierEntry, FrontierRow } from "./repo/frontier
 export {
   insertPages,
   listPages,
+  listPagesPage,
   findPageByUrl,
   PAGE_CLASSES,
   PAGE_COLUMNS,
 } from "./repo/pages.js";
-export type { PageClass, PageInput, PageRow } from "./repo/pages.js";
+export type { PageClass, PageInput, PageRow, PagedResult } from "./repo/pages.js";
 export { insertLinks, listLinks, resolveLinkTargets } from "./repo/links.js";
 export type { LinkInput, LinkRow } from "./repo/links.js";
 export {
@@ -91,8 +94,9 @@ export {
   findExternalUrl,
   listExternalUrlsDue,
   countExternalUrls,
+  listExternalLinksForCrawl,
 } from "./repo/external-urls.js";
-export type { ExternalUrlInput } from "./repo/external-urls.js";
+export type { ExternalUrlInput, ExternalLinkRow } from "./repo/external-urls.js";
 export {
   upsertCrawlMetrics,
   findCrawlMetrics,

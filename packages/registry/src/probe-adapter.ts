@@ -33,7 +33,7 @@ async function fetchUrl(url: string): Promise<HttpProbeResult> {
     headers[key] = value;
   });
   const body = await response.text().catch(() => null);
-  return { ok: true, status: response.status, headers, body };
+  return { ok: true, status: response.status, headers, body, finalUrl: response.url };
 }
 
 export function createProbeDeps(): LivenessDeps {

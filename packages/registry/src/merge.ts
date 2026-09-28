@@ -41,6 +41,9 @@ export function mergeSite(
     sampleCeiling: null,
     rateLimit: overlay.rateLimit ?? 1.0,
     ignorePaths: overlay.ignorePaths ?? [],
+    // Set by `sync.ts` from the liveness probe, which merge has no access to — this is
+    // the pre-probe default, overwritten before the row is actually upserted.
+    redirectTargetHost: null,
   };
 }
 

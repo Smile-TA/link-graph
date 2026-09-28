@@ -28,7 +28,11 @@ describe("processCrawlJob", () => {
       expect.any(Function),
       {},
     );
-    expect(add).toHaveBeenCalledWith("after-crawl", { crawlId: 42 });
+    expect(add).toHaveBeenCalledWith(
+      "after-crawl",
+      { crawlId: 42 },
+      { attempts: 3, backoff: { type: "exponential", delay: 60_000 } },
+    );
   });
 
   it("never enqueues a linkcheck job when the crawl throws", async () => {

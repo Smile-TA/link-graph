@@ -25,6 +25,7 @@ describe("mergeSite", () => {
       sampleCeiling: null,
       rateLimit: 1.0,
       ignorePaths: [],
+      redirectTargetHost: null,
     });
   });
 
