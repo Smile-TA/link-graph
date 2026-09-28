@@ -11,8 +11,17 @@
 #
 #   lychee-x86_64-apple-darwin.tar.gz        7338545 bytes  sha256 887503a9…d55978
 #   lychee-aarch64-apple-darwin.tar.gz       6992530 bytes  sha256 c9d3740e…1c4977
-#   lychee-x86_64-unknown-linux-gnu.tar.gz   7626970 bytes  sha256 1f4e0ef7…3951c9a
-#   lychee-aarch64-unknown-linux-gnu.tar.gz  7111728 bytes  sha256 91a7bd65…bddee4c
+#
+# Linux targets musl, not gnu (docs/notes.md item 10): the gnu build needs GLIBC 2.38,
+# which `node:22-slim` (Debian bookworm, GLIBC 2.36) does not have — invisible until
+# `Dockerfile.worker`'s build actually succeeded for the first time (2026-09-28) and the
+# vendored binary failed at spawn instead, with `GLIBC_2.38 not found`. musl's static
+# link has no libc version dependency at all, so it runs on any Linux host or container,
+# glibc or not — the actual property this script needs, not "matches the build image's
+# glibc" which would just move the same failure to the next image upgrade.
+#
+#   lychee-x86_64-unknown-linux-musl.tar.gz   7705781 bytes  sha256 73657a11…41566fc5
+#   lychee-aarch64-unknown-linux-musl.tar.gz  6962068 bytes  sha256 5d0b0e3a…8ede7dba5
 #
 # The checksums below are not hardcoded copies of those: the release publishes a
 # `<asset>.sha256` file next to each tarball, and this script downloads and checks
@@ -27,8 +36,8 @@ DEST="$ROOT/vendor/lychee"
 case "$(uname -s)-$(uname -m)" in
   Darwin-x86_64)          TARGET=x86_64-apple-darwin ;;
   Darwin-arm64)           TARGET=aarch64-apple-darwin ;;
-  Linux-x86_64)           TARGET=x86_64-unknown-linux-gnu ;;
-  Linux-aarch64|Linux-arm64) TARGET=aarch64-unknown-linux-gnu ;;
+  Linux-x86_64)           TARGET=x86_64-unknown-linux-musl ;;
+  Linux-aarch64|Linux-arm64) TARGET=aarch64-unknown-linux-musl ;;
   *) echo "no lychee release asset for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
 esac
 

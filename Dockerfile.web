@@ -1,0 +1,27 @@
+# The web image (docs/notes.md item 14): the Astro dashboard (PRD §9), built once and
+# served with its own compiled entrypoint rather than `astro dev` — the same
+# build-then-run split `Dockerfile.worker` uses for the scheduler, and for the same
+# reason: a container that restarts on every file-watch tick is not what "part of the
+# compose stack" means.
+#
+# See `Dockerfile.worker` for why `certs/zscaler-root-ca.pem` is baked in here too:
+# `npm ci` against the registry needs it for exactly the same reason on this image.
+FROM node:22-slim AS build
+WORKDIR /app
+COPY certs/zscaler-root-ca.pem /usr/local/share/ca-certificates/zscaler-root-ca.crt
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/zscaler-root-ca.crt
+COPY package.json package-lock.json ./
+COPY packages ./packages
+RUN npm ci
+RUN npm run build --workspace=@link-graph/web
+
+FROM node:22-slim
+WORKDIR /app
+COPY --from=build /app /app
+ENV HOST=0.0.0.0
+ENV PORT=4321
+ENTRYPOINT ["node", "packages/web/dist/server/entry.mjs"]

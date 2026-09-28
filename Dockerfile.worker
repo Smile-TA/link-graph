@@ -3,15 +3,42 @@
 # installs browsers — and the lychee static binary is vendored in via the same script
 # used locally, so it is fetched and sha256-verified at build time rather than trusted
 # from a base image.
+#
+# `certs/zscaler-root-ca.pem` (docs/notes.md item 10): this org's network terminates and
+# re-signs outbound TLS with Zscaler's own CA, which `node:22-slim` has no reason to
+# trust. Without it, every HTTPS fetch in this image — `npm ci` against the npm
+# registry, `curl` against github.com in `fetch-lychee.sh`, and the worker's own runtime
+# crawl/truth-source fetches — fails cert validation. `npm ci`'s failure in particular
+# surfaces as a useless "Exit handler never called!" npm-itself bug report that hides
+# the real `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` underneath it (reproduced 2026-09-28;
+# `docker run node:22-slim npm ci` against this repo failed the same way, consistently,
+# not intermittently — see the debug log's `verbose audit error` lines for the real
+# cause `curl`/`npm` never print at their own top level).
+#
+# Two separate trust stores need it, hence two separate steps: `update-ca-certificates`
+# for anything using the OS/OpenSSL trust store (`curl`), and `NODE_EXTRA_CA_CERTS` for
+# Node's own bundled trust store (`npm`, and this image's own `fetch`/`undici` calls at
+# runtime) — Node does not read the OS store by default, so the first alone would leave
+# `npm ci` still failing even with `curl` fixed.
 FROM node:22-slim AS build
 WORKDIR /app
+COPY certs/zscaler-root-ca.pem /usr/local/share/ca-certificates/zscaler-root-ca.crt
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/zscaler-root-ca.crt
 COPY package.json package-lock.json ./
 COPY packages ./packages
+COPY scripts ./scripts
 RUN npm ci
 RUN scripts/fetch-lychee.sh
 
 FROM node:22-slim
 WORKDIR /app
+COPY --from=build /usr/local/share/ca-certificates/zscaler-root-ca.crt /usr/local/share/ca-certificates/zscaler-root-ca.crt
+COPY --from=build /etc/ssl/certs /etc/ssl/certs
 COPY --from=build /app /app
 ENV LYCHEE_BIN=/app/vendor/lychee/lychee
+ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/zscaler-root-ca.crt
 ENTRYPOINT ["npx", "tsx", "packages/scheduler/src/bin.ts"]

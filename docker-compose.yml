@@ -1,9 +1,17 @@
-# Postgres, Redis, and the worker (PRD §8). The API at step 11 and Astro at step 12
-# still arrive later — infrastructure arrives when something needs it (implementation
-# plan, ordering rule 3), and step 10 (the scheduler's queues) is the thing that needed
-# Redis and a place to run the worker image.
+# Postgres, Redis, the worker, and Astro (PRD §8; the Astro service added for
+# docs/notes.md item 14 — see docs/04-operations.md §8). The API at step 11 still
+# arrives later — infrastructure arrives when something needs it (implementation plan,
+# ordering rule 3), and step 10 (the scheduler's queues) is the thing that needed Redis
+# and a place to run the worker image.
 #
 #   docker compose up -d --wait     then  npm run test:integration
+#
+# `packages/scheduler/src/worker.int.test.ts` in particular creates its own ad hoc
+# `crawl`-queue worker against this same Redis — if the real `worker` service is also
+# running (as `docker compose up -d --wait` starts it), the two race as consumers of the
+# same queue and the real one can steal the test's job, which then times out waiting for
+# a completion that will never come from the mocked, in-process side. Measured 2026-09-28.
+# `docker compose stop worker` first, run that test, `docker compose start worker` after.
 #
 # `--wait` is not optional. Measured 2026-08-20 on a fresh volume: for ~1.5s after
 # the container starts, the published port accepts the TCP connection (docker's port
@@ -56,6 +64,53 @@ services:
     environment:
       DATABASE_URL: postgres://link_graph:link_graph@postgres:5432/link_graph
       REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # docs/notes.md item 4: a way to see the queues without shelling into Redis with
+  # `redis-cli`. Plain `node:22-slim` + `npx`, no dedicated Dockerfile — `@bull-board/cli`
+  # is a complete CLI, not something this repo builds or extends, so a build step would
+  # only exist to re-solve the same TLS problem `Dockerfile.worker`/`Dockerfile.web`
+  # solve (see their own comments) for zero benefit; mounting the same cert and setting
+  # `NODE_EXTRA_CA_CERTS` does it without one.
+  bull-board:
+    image: node:22-slim
+    command: >
+      npx --yes @bull-board/cli --redis redis://redis:6379 --host 0.0.0.0 --port 3000
+    environment:
+      NODE_EXTRA_CA_CERTS: /certs/zscaler-root-ca.pem
+    volumes:
+      - ./certs/zscaler-root-ca.pem:/certs/zscaler-root-ca.pem:ro
+    ports:
+      # Loopback-only: `@bull-board/cli` itself warns on startup that with no
+      # --user/--password, anyone who can reach the port can view *and modify or
+      # delete* every queued job — bull-board's own dashboard has destructive actions,
+      # unlike the read-only Astro dashboard, so the published port doesn't get the
+      # same "just bind 0.0.0.0" treatment.
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # docs/notes.md item 14: boots with the rest of the stack rather than a separate
+  # `cd packages/web && npm run dev` every time. `DATABASE_URL`/`REDIS_URL` point at the
+  # compose network names — `packages/db`/`packages/scheduler`'s own `localhost`
+  # fallbacks (config.ts, queues.ts) are for a host process, and would resolve to
+  # nothing inside this container. `REDIS_URL` was added for item 6's "next crawl"
+  # column (`listNextCrawlTimes` reads BullMQ's own schedulers), so the sites list needs
+  # Redis now too, not just Postgres.
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    environment:
+      DATABASE_URL: postgres://link_graph:link_graph@postgres:5432/link_graph
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "4321:4321"
     depends_on:
       postgres:
         condition: service_healthy
