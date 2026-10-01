@@ -1,4 +1,5 @@
 ---
+import "../../../styles/global.css";
 import { siteBySlug, UsageError } from "@link-graph/cli";
 import { findLatestCompleteCrawl, listLinks, listPages } from "@link-graph/db";
 import { pool } from "../../../db";
@@ -43,7 +44,12 @@ const { sections, counts } = buildSectionMatrix(pages, links);
     <p>
       Crawl #{crawl.id}. Rows are the linking section, columns the linked-to section.
       Boilerplate (nav/footer) and self-links are excluded, so a cell counts only
-      links a reader would actually encounter reading that section's content.
+      links a reader would actually encounter reading that section's content. Use this
+      to see which parts of the site actually cross-link in their body copy and which
+      only connect through shared navigation — a section with a healthy diagonal
+      (lots of same-section links) but near-zero everywhere else is isolated from the
+      rest of the site in a way the orphan count alone won't show, since every one of
+      its pages can still be "linked" from within its own section.
     </p>
     <table>
       <thead>

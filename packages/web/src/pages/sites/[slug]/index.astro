@@ -1,6 +1,8 @@
 ---
+import "../../../styles/global.css";
 import { runReportCommand, UsageError } from "@link-graph/cli";
 import { listExternalLinksForCrawl, listPagesPage } from "@link-graph/db";
+import ClassLegend from "../../../components/ClassLegend.astro";
 import FindingTable from "../../../components/FindingTable.astro";
 import Pager from "../../../components/Pager.astro";
 import { pool } from "../../../db";
@@ -86,7 +88,17 @@ const [externalLinks, allPages] = await Promise.all([
           <tbody>
             {externalLinks.rows.map((link) => (
               <tr>
-                <td><a href={link.urlNormalized} target="_blank" rel="noopener noreferrer">{link.urlNormalized}</a></td>
+                <td>
+                  <a
+                    href={link.urlNormalized}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`${link.urlNormalized}, opens in a new tab`}
+                    title="opens in a new tab"
+                  >
+                    {link.urlNormalized} ↗
+                  </a>
+                </td>
                 <td>{link.lastChecked === null ? "not yet checked" : link.unverified ? "unverified" : (link.statusCode ?? "—")}</td>
                 <td>{link.lastChecked === null ? "—" : link.lastChecked.toISOString().slice(0, 16).replace("T", " ")}</td>
                 <td>{link.detail ?? ""}</td>
@@ -121,7 +133,15 @@ const [externalLinks, allPages] = await Promise.all([
                     {page.path}
                   </a>
                   {" "}
-                  <a href={page.urlNormalized} target="_blank" rel="noopener noreferrer">↗</a>
+                  <a
+                    href={page.urlNormalized}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`visit ${page.path}, opens in a new tab`}
+                    title="visit the live page (opens in a new tab)"
+                  >
+                    ↗
+                  </a>
                 </td>
                 <td>{page.statusCode ?? "—"}</td>
                 <td>{page.class ?? "—"}</td>
@@ -130,6 +150,7 @@ const [externalLinks, allPages] = await Promise.all([
           </tbody>
         </table>
       )}
+      <ClassLegend />
     </section>
   </body>
 </html>

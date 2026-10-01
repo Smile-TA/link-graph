@@ -268,17 +268,52 @@ Decisions from clarifying questions:
 - **Note 8 (view explanations):** inline on-page (an info icon/tooltip, or a short
   intro paragraph above each chart), not a separate linked docs page — stays visible
   without leaving the view.
+- **Note 12 ("Class" column), confirmed:** it's `pages.class`/`PAGE_CLASSES` (PRD §2's
+  own taxonomy vocabulary) — accurate, just unexplained out of context. Kept as-is
+  rather than renamed, with an inline legend instead — the same on-page call note 8
+  made, applied to a single confusing column rather than a whole view.
+- **Note 22 (ego external-links toggle):** a separate list below the existing
+  graph/table when the toggle is on, not nodes drawn in the SVG — an external URL has
+  no page row to walk further from, so it can only ever be a hop-1 leaf, and teaching
+  the hop-based layout engine a second, never-expandable node type is a bigger change
+  than a toggle most readers glance at once warrants.
+
+**Done** (2026-10-01), verified against live data:
+
+- **Note 23 (overflow bug, folded in from Phase 7b):** root cause confirmed, not
+  guessed — no page in `packages/web` set `overflow-wrap`/`word-break` anywhere, and
+  simkt.com's external-links table has a 469-character unbroken SafeLinks redirect URL
+  in a cell, which forced the whole table (and page) wider than the viewport. Fixed with
+  one shared `packages/web/src/styles/global.css` (`overflow-wrap: anywhere` on
+  `td`/`th`), imported by every page — a CSS-only fix, not the Phase 8 design pass.
+- **Note 12:** `packages/web/src/components/ClassLegend.astro`, a `<details>` legend
+  defining all 5 `PageClass` values (`satisfies Record<PageClass, string>`, so a sixth
+  value added later fails to compile rather than rendering a legend silently missing a
+  row), on both the ego page's table and the site page's "All pages" table.
+- **Note 8:** added a "why this helps"/"use this to…" sentence to the treemap,
+  distributions and section-matrix intro paragraphs (the mechanics were already
+  explained; the gap note 8 named was the insight, not the encoding) and to the ego
+  page's intro.
+- **Note 15:** every link to an ego-network page now has a sibling "visit the live
+  page" link (`target="_blank"`, `rel="noopener noreferrer"`, an `aria-label` naming
+  the URL and that it opens in a new tab, a `↗` glyph) — on `FindingTable.astro`'s
+  subject column, the ego page's own node table, and retrofitted onto the two existing
+  external-link anchors on the site page (external-links list, all-pages list) that had
+  `target="_blank"` but no `aria-label`.
+- **Note 22:** `externalNeighborsOf` (`packages/web/src/ego-network.ts`, with new unit
+  tests) plus a `?ext=1` toggle on the ego page listing the centred page's distinct
+  external link targets. Verified against real data: `simkt.com`'s homepage shows
+  exactly 9 external links when toggled on.
+- Verified end to end against the real stack (rebuilt `web` container): the overflow
+  fix renders inline in `<head>` on `simkt.com`'s page, the ego toggle/legend/visit-page
+  links all appear and work, and the finding-table visit-page link resolves correctly
+  on a real orphan. All 597 unit tests and 194 integration tests pass.
 
 ## Phase 7b — New items (added 2026-09-30, after phases were planned)
 Notes: 22, 23
 
-- **Note 22:** ego network toggle to include external links.
-- **Note 23:** overflow bug on site detail pages (e.g. `/sites/simkt.com/`), needs
-  reproducing before a fix.
-
-Not yet scoped with clarifying questions — folds into Phase 7 (UX polish) rather than
-its own phase, since both are presentation-layer fixes on existing pages. Not started
-until Phase 7 begins.
+Folded into Phase 7 above (both are presentation-layer fixes on existing pages) —
+done there, 2026-10-01.
 
 ## Phase 8 — Design system pass
 Notes: 18
@@ -296,7 +331,7 @@ deferred by the user to later, once usage limits reset. Not started until asked.
 - [x] Phase 4
 - [x] Phase 5
 - [x] Phase 6
-- [ ] Phase 7
+- [x] Phase 7 (notes 22, 23 folded in from Phase 7b)
 - [ ] Phase 8 (deferred — do not start unprompted)
 - [ ] Deploy readiness (no phase number yet — `docs/04-operations.md` §8: the web
       dashboard has an unauthenticated write route since Phase 6's review form; needs

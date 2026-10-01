@@ -48,7 +48,18 @@ const BUCKET_LABEL = { new: "new", changed: "changed since review", reviewed: "r
                   {siteId === undefined ? (
                     finding.finding.subject
                   ) : (
-                    <a href={egoUrl(finding.finding.subject)}>{finding.finding.subject}</a>
+                    <>
+                      <a href={egoUrl(finding.finding.subject)}>{finding.finding.subject}</a>{" "}
+                      <a
+                        href={finding.finding.subject}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`visit ${finding.finding.subject}, opens in a new tab`}
+                        title="visit the live page (opens in a new tab)"
+                      >
+                        ↗
+                      </a>
+                    </>
                   )}
                 </td>
                 <td>{renderEvidence(finding)}</td>

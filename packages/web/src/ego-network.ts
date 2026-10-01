@@ -25,6 +25,9 @@ export type EgoDirection = "both" | "out" | "in";
 export interface EgoNode {
   readonly pageId: number;
   readonly path: string;
+  /** The live page (docs/notes.md item 15) — re-centring the graph is not the same
+   * action as visiting the actual subject, so both need their own link. */
+  readonly urlNormalized: string;
   readonly class: PageClass | null;
   /** 0 = the centre page itself, 1 = a direct neighbour, 2 = a neighbour's neighbour. */
   readonly hop: 0 | 1 | 2;
@@ -108,7 +111,7 @@ export function buildEgoNetwork(
     const page = pageById.get(pageId);
     if (page === undefined)
       throw new Error(`ego network: link targets unknown page ${pageId}`);
-    return { pageId, path: page.path, class: page.class, hop };
+    return { pageId, path: page.path, urlNormalized: page.urlNormalized, class: page.class, hop };
   });
 
   const edgeKeys = new Set<string>();
@@ -173,4 +176,35 @@ export function layoutEgoNetwork(
     });
   }
   return positioned;
+}
+
+export interface ExternalNeighbor {
+  readonly urlNormalized: string;
+  /** `""` = no anchor text, as `links.anchor` itself is never null. */
+  readonly anchor: string;
+}
+
+/**
+ * The centre page's distinct external link targets (docs/notes.md item 22) — a
+ * separate list rather than nodes in the SVG graph: an external URL has no page row to
+ * walk further from, so it can only ever be a hop-1 leaf, and teaching the hop-based
+ * layout engine a second, never-expandable node type is a bigger change than a toggle
+ * most readers will glance at once warrants. `"in"` direction has no external edges to
+ * show — an external link always points *out* of a page we crawled, never into one.
+ */
+export function externalNeighborsOf(
+  links: readonly LinkRow[],
+  centerPageId: number,
+  direction: EgoDirection,
+): ExternalNeighbor[] {
+  if (direction === "in") return [];
+  const seen = new Set<string>();
+  const neighbors: ExternalNeighbor[] = [];
+  for (const link of links) {
+    if (!link.isExternal || link.fromPageId !== centerPageId) continue;
+    if (seen.has(link.toUrlNormalized)) continue;
+    seen.add(link.toUrlNormalized);
+    neighbors.push({ urlNormalized: link.toUrlNormalized, anchor: link.anchor });
+  }
+  return neighbors;
 }

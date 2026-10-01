@@ -1,10 +1,13 @@
 ---
+import "../../../styles/global.css";
 import { siteBySlug, UsageError } from "@link-graph/cli";
 import { findLatestCompleteCrawl, findPageByUrl, listLinks, listPages } from "@link-graph/db";
 import { normalizeUrl, siteHosts } from "@link-graph/core";
+import ClassLegend from "../../../components/ClassLegend.astro";
 import { pool } from "../../../db";
 import {
   buildEgoNetwork,
+  externalNeighborsOf,
   layoutEgoNetwork,
   type EgoDirection,
 } from "../../../ego-network";
@@ -56,15 +59,24 @@ const rawDir = Astro.url.searchParams.get("dir");
 const dir: EgoDirection = rawDir === "out" || rawDir === "in" ? rawDir : "both";
 
 const hops: 1 | 2 = Astro.url.searchParams.get("hops") === "1" ? 1 : 2;
+const showExternal = Astro.url.searchParams.get("ext") === "1";
 
 const network = buildEgoNetwork(pages, links, centerPage.id, dir, hops);
+const externalNeighbors = showExternal
+  ? externalNeighborsOf(links, centerPage.id, dir)
+  : [];
 const WIDTH = 720;
 const HEIGHT = 720;
 const positioned = layoutEgoNetwork(network, WIDTH, HEIGHT);
 const byId = new Map(positioned.map((node) => [node.pageId, node]));
 
-const egoUrl = (path: string, forDir: EgoDirection = dir, forHops: 1 | 2 = hops) =>
-  `/sites/${site.siteId}/ego/?path=${encodeURIComponent(path)}&dir=${forDir}&hops=${forHops}`;
+const egoUrl = (
+  path: string,
+  forDir: EgoDirection = dir,
+  forHops: 1 | 2 = hops,
+  forExt: boolean = showExternal,
+) =>
+  `/sites/${site.siteId}/ego/?path=${encodeURIComponent(path)}&dir=${forDir}&hops=${forHops}&ext=${forExt ? "1" : "0"}`;
 const HOP_COLOR = { 0: "#1d4ed8", 1: "#3b7a57", 2: "#8a8f98" } as const;
 const RADIUS = { 0: 8, 1: 5, 2: 5 } as const;
 const DIR_LABEL = { both: "both directions", out: "outbound only", in: "inbound only" } as const;
@@ -108,7 +120,10 @@ function shortenToRadius(
       ({network.nodes.length} page(s), {network.edges.length} edge(s)
       {network.truncated && " — hop-2 pages beyond ~50 were cut"}). Blue is the centre,
       green a direct neighbour, grey a neighbour's neighbour. Arrows show which way each
-      link actually points. Click a page to re-centre.
+      link actually points. Click a page to re-centre. Use this when a finding on the
+      report needs context a count can't give — why a page is an orphan (who, if
+      anyone, almost links to it), or what a broken link's blast radius actually looks
+      like page by page.
     </p>
     <p class="dir-toggle">
       Direction:
@@ -125,6 +140,11 @@ function shortenToRadius(
           {option}
         </a>
       ))}
+    </p>
+    <p class="dir-toggle">
+      <a href={egoUrl(centerPage.path, dir, hops, !showExternal)} class:list={{ current: showExternal }}>
+        {showExternal ? "hide" : "show"} external links from this page
+      </a>
     </p>
     <svg width={WIDTH} height={HEIGHT}>
       <defs>
@@ -166,9 +186,37 @@ function shortenToRadius(
         </g>
       ))}
     </svg>
+    {showExternal && (
+      <section>
+        <h2>External links from {centerPage.path} ({externalNeighbors.length})</h2>
+        {externalNeighbors.length === 0 ? (
+          <p>(none)</p>
+        ) : (
+          <ul>
+            {externalNeighbors.map((neighbor) => (
+              <li>
+                <a href={neighbor.urlNormalized} target="_blank" rel="noopener noreferrer">
+                  {neighbor.urlNormalized}
+                </a>{" "}
+                <a
+                  href={neighbor.urlNormalized}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="opens in a new tab"
+                  title="opens in a new tab"
+                >
+                  ↗
+                </a>
+                {neighbor.anchor !== "" && ` — "${neighbor.anchor}"`}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    )}
     <table>
       <thead>
-        <tr><th>Hop</th><th>Path</th><th>Class</th></tr>
+        <tr><th>Hop</th><th>Path</th><th>Class</th><th></th></tr>
       </thead>
       <tbody>
         {[...network.nodes]
@@ -178,9 +226,21 @@ function shortenToRadius(
               <td>{node.hop}</td>
               <td><a href={egoUrl(node.path)}>{node.path}</a></td>
               <td>{node.class ?? "not yet classified"}</td>
+              <td>
+                <a
+                  href={node.urlNormalized}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`visit ${node.path}, opens in a new tab`}
+                  title="visit the live page (opens in a new tab)"
+                >
+                  visit page ↗
+                </a>
+              </td>
             </tr>
           ))}
       </tbody>
     </table>
+    <ClassLegend />
   </body>
 </html>

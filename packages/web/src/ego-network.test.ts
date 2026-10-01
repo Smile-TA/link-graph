@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEgoNetwork, layoutEgoNetwork } from "./ego-network.js";
+import { buildEgoNetwork, externalNeighborsOf, layoutEgoNetwork } from "./ego-network.js";
 import type { LinkRow, PageRow } from "@link-graph/db";
 
 function page(id: number, path: string): PageRow {
@@ -158,5 +158,32 @@ describe("layoutEgoNetwork", () => {
       const distance = Math.hypot(node.x - 200, node.y - 200);
       expect(distance).toBeCloseTo(400 * 0.28, 5);
     }
+  });
+});
+
+describe("externalNeighborsOf", () => {
+  it("lists the centre's distinct external link targets, outbound only", () => {
+    const links = [
+      link(1, { fromPageId: 1, toPageId: null, isExternal: true, toUrlNormalized: "https://a.example/", anchor: "A" }),
+      // A duplicate target from the same page: counted once.
+      link(2, { fromPageId: 1, toPageId: null, isExternal: true, toUrlNormalized: "https://a.example/", anchor: "A again" }),
+      link(3, { fromPageId: 1, toPageId: null, isExternal: true, toUrlNormalized: "https://b.example/", anchor: "" }),
+      // Internal, and external but from a different page: neither counts.
+      link(4, { fromPageId: 1, toPageId: 2 }),
+      link(5, { fromPageId: 2, toPageId: null, isExternal: true, toUrlNormalized: "https://c.example/" }),
+    ];
+
+    expect(externalNeighborsOf(links, 1, "both")).toEqual([
+      { urlNormalized: "https://a.example/", anchor: "A" },
+      { urlNormalized: "https://b.example/", anchor: "" },
+    ]);
+    expect(externalNeighborsOf(links, 1, "out")).toHaveLength(2);
+  });
+
+  it("is empty for inbound-only direction, since an external link is never inbound", () => {
+    const links = [
+      link(1, { fromPageId: 1, toPageId: null, isExternal: true, toUrlNormalized: "https://a.example/" }),
+    ];
+    expect(externalNeighborsOf(links, 1, "in")).toEqual([]);
   });
 });
