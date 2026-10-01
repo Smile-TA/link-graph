@@ -137,6 +137,7 @@ export {
   findFindingReview,
   listFindingReviews,
   upsertFindingReview,
+  deleteFindingReview,
   FINDING_KINDS,
   REVIEW_STATES,
 } from "./repo/finding-reviews.js";

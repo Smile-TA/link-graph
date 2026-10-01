@@ -10,6 +10,7 @@ import { runMigrations } from "../migrate.js";
 import { insertCrawl } from "./crawls.js";
 import { upsertSite, type SiteRow } from "./sites.js";
 import {
+  deleteFindingReview,
   findFindingReview,
   listFindingReviews,
   upsertFindingReview,
@@ -200,5 +201,26 @@ describe("finding_reviews", () => {
     await expect(
       upsertFindingReview(db.pool, review(site, { subject: " " })),
     ).rejects.toThrow(/finding_reviews_subject_check/);
+  });
+
+  /**
+   * Clearing a review is not the same operation as re-judging it: the finding goes back
+   * to ranking as `new`, not `reviewed` with a replacement claim.
+   */
+  it("removes a review entirely, returning the row that was deleted", async () => {
+    const site = await newSite();
+    const written = await upsertFindingReview(db.pool, review(site));
+
+    const deleted = await deleteFindingReview(db.pool, site.id, "orphan", written.subject);
+
+    expect(deleted).toMatchObject({ id: written.id });
+    expect(await findFindingReview(db.pool, site.id, "orphan", written.subject)).toBeNull();
+  });
+
+  it("returns null deleting a review that is not there", async () => {
+    const site = await newSite();
+    expect(
+      await deleteFindingReview(db.pool, site.id, "orphan", "https://integrity.com/nope/"),
+    ).toBeNull();
   });
 });

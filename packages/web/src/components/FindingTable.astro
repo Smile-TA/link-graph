@@ -53,38 +53,58 @@ const BUCKET_LABEL = { new: "new", changed: "changed since review", reviewed: "r
                 </td>
                 <td>{renderEvidence(finding)}</td>
                 <td>
-                  {finding.review === null
-                    ? ""
-                    : `${finding.review.state} by ${finding.review.reviewedBy}: ${finding.review.note}`}
+                  {finding.review === null ? (
+                    ""
+                  ) : (
+                    <>
+                      {finding.review.state} by {finding.review.reviewedBy} on{" "}
+                      {finding.review.reviewedAt.toISOString().slice(0, 10)}: {finding.review.note}
+                    </>
+                  )}
                 </td>
                 <td>
                   {siteId === undefined ? null : (
-                    <form method="post" action={`/sites/${siteId}/review`}>
-                      <input type="hidden" name="kind" value={finding.finding.evidence.kind} />
-                      <input type="hidden" name="subject" value={finding.finding.subject} />
-                      <input
-                        type="hidden"
-                        name="returnTo"
-                        value={currentUrl === undefined ? `/sites/${siteId}/` : `${currentUrl.pathname}${currentUrl.search}`}
-                      />
-                      <select name="state">
-                        <option value="intentional" selected={finding.review?.state === "intentional"}>
-                          intentional
-                        </option>
-                        <option value="acknowledged" selected={finding.review?.state === "acknowledged"}>
-                          acknowledged
-                        </option>
-                      </select>
-                      <input
-                        type="text"
-                        name="note"
-                        placeholder="why"
-                        defaultValue={finding.review?.note ?? ""}
-                        required
-                      />
-                      <input type="text" name="reviewedBy" placeholder="your name" required />
-                      <button type="submit">save review</button>
-                    </form>
+                    <>
+                      <form method="post" action={`/sites/${siteId}/review`}>
+                        <input type="hidden" name="kind" value={finding.finding.evidence.kind} />
+                        <input type="hidden" name="subject" value={finding.finding.subject} />
+                        <input
+                          type="hidden"
+                          name="returnTo"
+                          value={currentUrl === undefined ? `/sites/${siteId}/` : `${currentUrl.pathname}${currentUrl.search}`}
+                        />
+                        <select name="state">
+                          <option value="intentional" selected={finding.review?.state === "intentional"}>
+                            intentional
+                          </option>
+                          <option value="acknowledged" selected={finding.review?.state === "acknowledged"}>
+                            acknowledged
+                          </option>
+                        </select>
+                        <input
+                          type="text"
+                          name="note"
+                          placeholder="why"
+                          defaultValue={finding.review?.note ?? ""}
+                          required
+                        />
+                        <input type="text" name="reviewedBy" placeholder="your name" required />
+                        <button type="submit">save review</button>
+                      </form>
+                      {finding.review === null ? null : (
+                        <form method="post" action={`/sites/${siteId}/review`}>
+                          <input type="hidden" name="intent" value="delete" />
+                          <input type="hidden" name="kind" value={finding.finding.evidence.kind} />
+                          <input type="hidden" name="subject" value={finding.finding.subject} />
+                          <input
+                            type="hidden"
+                            name="returnTo"
+                            value={currentUrl === undefined ? `/sites/${siteId}/` : `${currentUrl.pathname}${currentUrl.search}`}
+                          />
+                          <button type="submit">remove review</button>
+                        </form>
+                      )}
+                    </>
                   )}
                 </td>
               </tr>

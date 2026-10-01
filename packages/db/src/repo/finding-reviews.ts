@@ -144,3 +144,24 @@ export async function findFindingReview(
   );
   return rows[0] ?? null;
 }
+
+/**
+ * Clears a review entirely — not the same as re-judging it (`upsertFindingReview`
+ * already handles that). For when the judgement itself was wrong, not just its note:
+ * the finding goes back to ranking as `new` on the next report rather than carrying a
+ * replacement claim. Returns the row that was deleted, `null` if there was none, so the
+ * caller can tell a genuine removal from a no-op.
+ */
+export async function deleteFindingReview(
+  db: Queryable,
+  siteId: number,
+  kind: FindingKind,
+  subject: string,
+): Promise<FindingReviewRow | null> {
+  const { rows } = await db.query<FindingReviewRow>(
+    `DELETE FROM finding_reviews WHERE site_id = $1 AND kind = $2 AND subject = $3
+     RETURNING ${COLUMNS}`,
+    [siteId, kind, subject],
+  );
+  return rows[0] ?? null;
+}
