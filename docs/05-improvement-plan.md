@@ -298,3 +298,6 @@ deferred by the user to later, once usage limits reset. Not started until asked.
 - [x] Phase 6
 - [ ] Phase 7
 - [ ] Phase 8 (deferred — do not start unprompted)
+- [ ] Deploy readiness (no phase number yet — `docs/04-operations.md` §8: the web
+      dashboard has an unauthenticated write route since Phase 6's review form; needs
+      auth before it is reachable from anywhere but `localhost`)

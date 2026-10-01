@@ -270,4 +270,20 @@ npm run build && npm run start   # production build, same as the compose service
 A host-run dev server and the compose `web` service both default to port 4321 — stop
 one before starting the other, or override with `PORT`.
 
-Reads Postgres only — no separate service to keep alive besides the database itself.
+Reads Postgres and Redis (`listNextCrawlTimes`, for the sites list's next-crawl
+column) — no separate service to keep alive besides those two. It also **writes**
+Postgres now: `docs/notes.md` item 7's review form (`/sites/:slug/review`) upserts or
+deletes a `finding_reviews` row per submission, the one mutating route in an otherwise
+read-only dashboard.
+
+**Before this goes anywhere beyond `docker compose` on localhost, it needs auth.**
+Every route in `packages/web` — including the write one — is unauthenticated today,
+which was an acceptable gap while every route only read data (worst case, someone sees
+orphan counts). A `POST` that can delete or overwrite a human's review is a different
+risk once this sits behind a real ingress rather than `localhost:4321` reachable only
+from this machine. This is the same reasoning that got `bull-board` bound to
+`127.0.0.1` instead of `0.0.0.0` (§3) rather than published — the dashboard doesn't
+have that luxury once it is the thing people are meant to reach, so it needs its own
+answer (HTTP basic auth in front, or whatever this estate's other internal tools use)
+before "deploying it somewhere" (line 5) stops being out of scope. No proposal yet —
+recorded here so it isn't forgotten when that phase starts.
