@@ -164,6 +164,30 @@ Decisions from clarifying questions:
   to fetch once and let tanstack-table sort/filter/paginate in the browser, no new
   server-side query surface needed.
 
+**Done** (2026-09-30), verified against live data:
+
+- Added `listLatestCrawlMetricsPerSite` (`packages/db/src/repo/crawl-metrics.ts`) — one
+  `DISTINCT ON` query joining `crawls`/`crawl_metrics` for every site's latest complete
+  crawl, rather than re-deriving orphan/broken counts from `findings.ts`'s per-row,
+  full-link-scan queries 164 times per home-page request.
+  `runReportCommand`'s per-site cost (confirmed ~9 queries + a full link/page scan,
+  127,845 links on integrity.com alone) makes it unusable for a list page, so the home
+  page reads the stored `crawl_metrics` rollup instead.
+  No `accepted`/`reviewed` column exists yet (Phase 6 isn't built), so "unreviewed
+  orphan count" is just the raw `orphans` count for now — `finding_reviews` never
+  changes a measured number (PRD §7.1), so there's no smaller subset to show.
+- `packages/web/src/components/SitesTable.tsx`: a React/tanstack-table island
+  (`client:load`) — text search (site id/host), status facet (enabled/disabled/alias),
+  "has broken links"/"has orphans" checkboxes, and click-to-sort columns, all
+  client-side over the ~164 rows fetched once at SSR time.
+  `@tanstack/react-table` v9 (initial install) turned out to be an unrelated
+  ground-up rewrite with no `useReactTable`/`getCoreRowModel` — pinned to the stable
+  v8 line instead.
+- Verified against the real estate via the rebuilt `web` container: 164 of 164 sites
+  render, the 10 redirect aliases from Phase 1 show `alias` status, and per-site
+  broken/orphan counts match `crawl_metrics` (e.g. a never-crawled site shows
+  "unknown" orphans rather than a fabricated zero).
+
 ## Phase 6 — Review/debugging workflows
 Notes: 7, 16, 2 (remainder)
 
@@ -220,7 +244,7 @@ deferred by the user to later, once usage limits reset. Not started until asked.
 - [x] Phase 2
 - [x] Phase 3
 - [x] Phase 4
-- [ ] Phase 5
+- [x] Phase 5
 - [ ] Phase 6
 - [ ] Phase 7
 - [ ] Phase 8 (deferred — do not start unprompted)

@@ -110,3 +110,33 @@ export async function findCrawlMetrics(
   );
   return rows[0] ?? null;
 }
+
+export interface SiteCrawlMetrics {
+  readonly siteId: number;
+  readonly orphans: number | null;
+  readonly orphansUnknownReason: OrphansUnknownReason | null;
+  readonly broken: number;
+}
+
+/**
+ * One row per site for its latest complete crawl's stored rollup (docs/notes.md item
+ * 17) — the sites-list "at a glance" table. `DISTINCT ON` applies
+ * `findLatestCompleteCrawl`'s own ordering (`crawls.ts`) across every site in one query
+ * rather than 164 round trips, and joins straight to the already-computed
+ * `crawl_metrics` row instead of re-deriving orphan/broken counts from `findings.ts`'s
+ * per-row queries (which scan every link of the crawl — too expensive to run per site on
+ * every home-page request).
+ */
+export async function listLatestCrawlMetricsPerSite(
+  db: Queryable,
+): Promise<SiteCrawlMetrics[]> {
+  const { rows } = await db.query<SiteCrawlMetrics>(
+    `SELECT DISTINCT ON (c.site_id) c.site_id AS "siteId", cm.orphans,
+       cm.orphans_unknown_reason AS "orphansUnknownReason", cm.broken
+     FROM crawls c
+     JOIN crawl_metrics cm ON cm.crawl_id = c.id
+     WHERE c.status = 'complete' AND c.env = 'prod'
+     ORDER BY c.site_id, c.finished_at DESC NULLS LAST, c.id DESC`,
+  );
+  return rows;
+}

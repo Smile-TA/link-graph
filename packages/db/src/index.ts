@@ -100,9 +100,14 @@ export type { ExternalUrlInput, ExternalLinkRow } from "./repo/external-urls.js"
 export {
   upsertCrawlMetrics,
   findCrawlMetrics,
+  listLatestCrawlMetricsPerSite,
   ORPHANS_UNKNOWN_REASONS,
 } from "./repo/crawl-metrics.js";
-export type { CrawlMetricsInput, OrphansUnknownReason } from "./repo/crawl-metrics.js";
+export type {
+  CrawlMetricsInput,
+  OrphansUnknownReason,
+  SiteCrawlMetrics,
+} from "./repo/crawl-metrics.js";
 export {
   markBoilerplateLinks,
   countFetchedPages,
