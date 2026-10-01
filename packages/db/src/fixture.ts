@@ -218,6 +218,7 @@ function parseSite(raw: Record<string, unknown>): SiteInput {
     sampleCeiling,
     rateLimit: f.optNumber("rateLimit") ?? 1,
     ignorePaths: f.optStrArray("ignorePaths") ?? [],
+    ignoreLinkPatterns: f.optStrArray("ignoreLinkPatterns") ?? [],
     // Not fixture-parsed: a redirect alias is derived from a live probe (`sync.ts`),
     // never authored by hand in a fixture file.
     redirectTargetHost: null,

@@ -114,6 +114,7 @@ async function makeSite(): Promise<number> {
     sampleCeiling: null,
     rateLimit: 1,
     ignorePaths: [],
+    ignoreLinkPatterns: [],
     redirectTargetHost: null,
   });
   return site.id;
@@ -162,6 +163,7 @@ describe("sites", () => {
       sampleCeiling: null,
       rateLimit: 1,
       ignorePaths: [],
+      ignoreLinkPatterns: [],
       redirectTargetHost: null,
     });
     expect(site.truthSource).toBeNull();
@@ -186,6 +188,7 @@ describe("sites", () => {
       sampleCeiling: ceiling,
       rateLimit: 1,
       ignorePaths: [],
+      ignoreLinkPatterns: [],
       redirectTargetHost: null,
     });
     await expect(upsertSite(db.pool, site("sample", null))).rejects.toThrow(

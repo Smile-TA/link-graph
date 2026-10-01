@@ -15,6 +15,7 @@ const site = (overrides: Partial<SiteRow> = {}): SiteRow => ({
   sampleCeiling: null,
   rateLimit: 1,
   ignorePaths: [],
+  ignoreLinkPatterns: [],
   redirectTargetHost: null,
   ...overrides,
 });

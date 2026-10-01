@@ -587,6 +587,43 @@ describe("refusals", () => {
     expect(await findCrawlMetrics(db.pool, crawlId)).toBeNull();
   });
 
+  it("refuses a homepage redirect to a page this crawl never fetched", async () => {
+    const json = build403bplanCrawl();
+    const crawlId = await load({
+      ...json,
+      pages: json.pages.map((p) =>
+        p.url === HOME_URL
+          ? { ...p, statusCode: 301, redirectTo: "https://403bplan.net/nowhere/" }
+          : p,
+      ),
+    });
+    await expect(analyse(db.pool, crawlId)).rejects.toThrow(/no usable root/);
+    expect(await findCrawlMetrics(db.pool, crawlId)).toBeNull();
+  });
+
+  /**
+   * docs/notes.md item 2: zip.planenroll.com/ 301s to /agent, same host. The crawler
+   * records the redirect and fetches the target as its own page row (`fetch-page.ts`) —
+   * this is the reachability side of that: the target becomes the root the graph is
+   * measured from, and the homepage row itself is excluded rather than counted as
+   * linked or as an orphan.
+   */
+  it("measures reachability from the redirect target instead of refusing", async () => {
+    const json = build403bplanCrawl();
+    const crawlId = await load({
+      ...json,
+      pages: json.pages.map((p) =>
+        p.url === HOME_URL
+          ? { ...p, statusCode: 301, redirectTo: "https://403bplan.net/plan-participant/" }
+          : p,
+      ),
+    });
+    await expect(analyse(db.pool, crawlId)).resolves.not.toThrow();
+    const pageClasses = await classes(crawlId);
+    expect(pageClasses["/"]).toBe("excluded");
+    expect(pageClasses["/plan-participant/"]).toBe("linked");
+  });
+
   /**
    * Engineering guide §1: an empty result is a loud error, never an answer. Without this
    * refusal a link-extraction failure publishes "12 of 13 pages are orphans" as fact.

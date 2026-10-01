@@ -25,6 +25,7 @@ describe("mergeSite", () => {
       sampleCeiling: null,
       rateLimit: 1.0,
       ignorePaths: [],
+      ignoreLinkPatterns: [],
       redirectTargetHost: null,
     });
   });
@@ -42,15 +43,17 @@ describe("mergeSite", () => {
     expect(row?.enabled).toBe(false);
   });
 
-  it("curation crawlerMode, rateLimit and ignorePaths override the defaults", () => {
+  it("curation crawlerMode, rateLimit, ignorePaths and ignoreLinkPatterns override the defaults", () => {
     const row = mergeSite(derived({}), () => ({
       crawlerMode: "playwright",
       rateLimit: 0.5,
       ignorePaths: ["/wp-admin/"],
+      ignoreLinkPatterns: ["doubleclick.net"],
     }));
     expect(row?.crawlerMode).toBe("playwright");
     expect(row?.rateLimit).toBe(0.5);
     expect(row?.ignorePaths).toEqual(["/wp-admin/"]);
+    expect(row?.ignoreLinkPatterns).toEqual(["doubleclick.net"]);
   });
 
   it("no stage values file means stageHost is null, not undefined or a throw", () => {

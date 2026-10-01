@@ -304,6 +304,7 @@ describe("loadFixture: every column, at a non-default value", () => {
       sampleCeiling: 500,
       rateLimit: 0.5,
       ignorePaths: ["/wp-login.php", "/carrier-index/"],
+      ignoreLinkPatterns: [],
       redirectTargetHost: null,
     });
   });

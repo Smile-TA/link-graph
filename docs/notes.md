@@ -39,3 +39,5 @@ IncompleteLinkcheckError: external link check of crawl 105 is incomplete: not on
 ```
 20. How can I see the currently running crawler?
 21. bull board is slow to respond now. Why? could it be because too many schedules or crawls? Memory issue on the machine?
+22. Ego network should have a toggle to include external links
+23. Need to fix overflow issue on http://localhost:4321/sites/simkt.com/ and similar.

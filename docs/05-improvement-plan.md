@@ -214,6 +214,45 @@ Decisions from clarifying questions:
   noisy third-party trackers) that get excluded from checking/counting wherever found
   — not whole pages skipped from the crawl.
 
+**Done** (2026-09-30), verified against live data:
+
+- **Note 2 remainder:** `analyse.ts` no longer throws unconditionally on a non-2xx
+  homepage. When the homepage redirects (3xx) and `pages.redirect_to` names a page this
+  same crawl fetched as a usable 2xx, that page becomes the reachability root instead —
+  the homepage row itself still classifies `excluded` (the existing `redirectTo !== null`
+  rule in `classify.ts` already covers that). When the target is missing or not itself
+  usable, the refusal still fires, now naming the redirect chain in the message. No
+  schema change: the crawler already recorded `redirect_to` and queued the target as its
+  own page (`fetch-page.ts`) — confirmed by research before writing the fix, not
+  assumed. Verified against the real crawl from the original bug report (crawl 31,
+  zip.planenroll.com) and a newer one (crawl 179): both show `/agent/` itself 404ing, so
+  this specific site still correctly refuses — the fix only succeeds when the target is
+  genuinely usable, which a new `analyse.int.test.ts` case covers with a synthetic
+  same-host redirect to an already-200 page (`/plan-participant/`), alongside a second
+  new case proving a redirect to an unfetched target still refuses.
+- **Note 7:** the backend (reviews, evidence digests, re-surfacing on change via
+  `reappearedSubjects`) was already fully built from earlier work — `link-graph note`
+  already does everything the note asked for from the CLI. The actual gap was a web UI
+  write path, so `packages/web/src/pages/sites/[slug]/review.ts` (a POST endpoint
+  calling the same `runNoteCommand` the CLI calls) plus an inline form on each finding
+  row in `FindingTable.astro` now let a reviewer mark a finding `intentional` or
+  `acknowledged` with a note, right from the report page. Verified end to end against a
+  real finding (jbergassociates.com's `/blog/` orphan): submitted via `curl` exactly as
+  the browser form would, confirmed the row landed in `finding_reviews`, confirmed the
+  page re-rendered it as reviewed, then deleted the test row.
+- **Note 16:** a new curation-overlay field, `ignoreLinkPatterns` (parallel to the
+  existing `ignorePaths`), stored on `sites.ignore_link_patterns`
+  (`014_ignore_link_patterns.sql`). Substring match against the external link's URL,
+  applied in the three queries that select a crawl's external links
+  (`listExternalUrlsDue`, `listExternalLinksForCrawl`, `countExternalUrls`) via a join
+  from `links` through `crawls` to the owning site — not a column on the shared
+  `external_urls` table, since the same tracker URL linked from a second site with no
+  config of its own is still worth checking there. Verified against real data: set
+  `ignore_link_patterns = {facebook.com}` on smsteam.net (1,038 of its 7,352 distinct
+  external links), confirmed `countExternalUrls` dropped to exactly 6,314 and
+  `listExternalUrlsDue` contained zero `facebook.com` URLs, then reverted the test
+  change.
+
 ## Phase 7 — UX polish
 Notes: 12, 8, 15
 
@@ -230,6 +269,17 @@ Decisions from clarifying questions:
   intro paragraph above each chart), not a separate linked docs page — stays visible
   without leaving the view.
 
+## Phase 7b — New items (added 2026-09-30, after phases were planned)
+Notes: 22, 23
+
+- **Note 22:** ego network toggle to include external links.
+- **Note 23:** overflow bug on site detail pages (e.g. `/sites/simkt.com/`), needs
+  reproducing before a fix.
+
+Not yet scoped with clarifying questions — folds into Phase 7 (UX polish) rather than
+its own phase, since both are presentation-layer fixes on existing pages. Not started
+until Phase 7 begins.
+
 ## Phase 8 — Design system pass
 Notes: 18
 
@@ -245,6 +295,6 @@ deferred by the user to later, once usage limits reset. Not started until asked.
 - [x] Phase 3
 - [x] Phase 4
 - [x] Phase 5
-- [ ] Phase 6
+- [x] Phase 6
 - [ ] Phase 7
 - [ ] Phase 8 (deferred — do not start unprompted)

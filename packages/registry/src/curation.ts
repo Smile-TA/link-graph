@@ -29,6 +29,7 @@ export interface CurationEntry {
   /** Overrides the "has at least one prod host" default. */
   readonly enabled?: boolean;
   readonly ignorePaths?: readonly string[];
+  readonly ignoreLinkPatterns?: readonly string[];
   readonly crawlerMode?: "http" | "playwright";
   readonly rateLimit?: number;
 }

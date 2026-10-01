@@ -35,6 +35,7 @@ const site = (siteId: string, enabled: boolean): SiteInput => ({
   sampleCeiling: null,
   rateLimit: 1.0,
   ignorePaths: [],
+  ignoreLinkPatterns: [],
   redirectTargetHost: null,
 });
 

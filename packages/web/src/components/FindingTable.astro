@@ -10,11 +10,17 @@ interface Props {
   readonly title: string;
   readonly findings: readonly ReviewedFinding[];
   readonly renderEvidence: (finding: ReviewedFinding) => string;
-  /** When given, each subject links to its ego network (PRD §9 item 5) there. */
+  /**
+   * When given, each subject links to its ego network (PRD §9 item 5) there, and each
+   * row gets a review form (docs/notes.md item 7) that posts to
+   * `/sites/:siteId/review`.
+   */
   readonly siteId?: string;
+  /** Where the review form redirects back to, including any `?extPage=` etc. */
+  readonly currentUrl?: URL;
 }
 
-const { title, findings, renderEvidence, siteId } = Astro.props;
+const { title, findings, renderEvidence, siteId, currentUrl } = Astro.props;
 const buckets = countBuckets(findings);
 const egoUrl = (subject: string) => `/sites/${siteId}/ego/?path=${encodeURIComponent(subject)}`;
 const BUCKET_LABEL = { new: "new", changed: "changed since review", reviewed: "reviewed" };
@@ -29,7 +35,7 @@ const BUCKET_LABEL = { new: "new", changed: "changed since review", reviewed: "r
   ) : (
     <table>
       <thead>
-        <tr><th>bucket</th><th>subject</th><th>evidence</th><th>review</th></tr>
+        <tr><th>bucket</th><th>subject</th><th>evidence</th><th>review</th><th>{siteId === undefined ? "" : "judge"}</th></tr>
       </thead>
       <tbody>
         {REVIEW_BUCKETS.flatMap((bucket) =>
@@ -50,6 +56,36 @@ const BUCKET_LABEL = { new: "new", changed: "changed since review", reviewed: "r
                   {finding.review === null
                     ? ""
                     : `${finding.review.state} by ${finding.review.reviewedBy}: ${finding.review.note}`}
+                </td>
+                <td>
+                  {siteId === undefined ? null : (
+                    <form method="post" action={`/sites/${siteId}/review`}>
+                      <input type="hidden" name="kind" value={finding.finding.evidence.kind} />
+                      <input type="hidden" name="subject" value={finding.finding.subject} />
+                      <input
+                        type="hidden"
+                        name="returnTo"
+                        value={currentUrl === undefined ? `/sites/${siteId}/` : `${currentUrl.pathname}${currentUrl.search}`}
+                      />
+                      <select name="state">
+                        <option value="intentional" selected={finding.review?.state === "intentional"}>
+                          intentional
+                        </option>
+                        <option value="acknowledged" selected={finding.review?.state === "acknowledged"}>
+                          acknowledged
+                        </option>
+                      </select>
+                      <input
+                        type="text"
+                        name="note"
+                        placeholder="why"
+                        defaultValue={finding.review?.note ?? ""}
+                        required
+                      />
+                      <input type="text" name="reviewedBy" placeholder="your name" required />
+                      <button type="submit">save review</button>
+                    </form>
+                  )}
                 </td>
               </tr>
             )),

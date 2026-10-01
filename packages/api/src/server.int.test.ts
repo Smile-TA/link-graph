@@ -119,6 +119,7 @@ describe("GET /sites/:slug/report", () => {
       sampleCeiling: null,
       rateLimit: 1,
       ignorePaths: [],
+      ignoreLinkPatterns: [],
       redirectTargetHost: null,
     });
     const base = await listen();

@@ -15,5 +15,7 @@ export { runCrawlCommand } from "./run.js";
 export type { CrawlCommandDeps } from "./run.js";
 export type { CrawlReport } from "./report.js";
 export { runReportCommand } from "./report-command.js";
+export { runNoteCommand, formatNoteOutcome } from "./note-command.js";
+export type { NoteRequest, NoteOutcome } from "./note-command.js";
 export { UsageError } from "./exit.js";
 export { siteBySlug } from "./registry.js";

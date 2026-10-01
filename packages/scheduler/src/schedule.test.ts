@@ -18,6 +18,7 @@ function site(siteId: string, enabled: boolean): SiteRow {
     sampleCeiling: null,
     rateLimit: 1,
     ignorePaths: [],
+    ignoreLinkPatterns: [],
     redirectTargetHost: null,
   };
 }

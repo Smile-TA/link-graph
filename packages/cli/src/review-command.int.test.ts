@@ -419,6 +419,7 @@ describe("link-graph note + report", () => {
       sampleCeiling: null,
       rateLimit: 1,
       ignorePaths: [],
+      ignoreLinkPatterns: [],
       redirectTargetHost: null,
     });
 

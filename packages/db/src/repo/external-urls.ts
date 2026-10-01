@@ -107,9 +107,15 @@ export async function listExternalUrlsDue(
   const { rows } = await db.query<{ url: string }>(
     `SELECT DISTINCT l.to_url_normalized AS url
      FROM links l
+     JOIN crawls c ON c.id = l.crawl_id
+     JOIN sites s ON s.id = c.site_id
      LEFT JOIN external_urls e ON e.url_normalized = l.to_url_normalized
      WHERE l.crawl_id = $1 AND l.is_external
        AND (e.last_checked IS NULL OR e.last_checked < $2)
+       AND NOT EXISTS (
+         SELECT 1 FROM unnest(s.ignore_link_patterns) p
+         WHERE strpos(l.to_url_normalized, p) > 0
+       )
      ORDER BY 1`,
     [crawlId, checkedBefore],
   );
@@ -149,8 +155,15 @@ export async function listExternalLinksForCrawl(
       `SELECT l.to_url_normalized AS "urlNormalized", e.last_checked AS "lastChecked",
               e.status_code AS "statusCode", coalesce(e.unverified, false) AS unverified,
               e.detail
-       FROM (SELECT DISTINCT to_url_normalized FROM links
-             WHERE crawl_id = $1 AND is_external) l
+       FROM (SELECT DISTINCT l.to_url_normalized
+             FROM links l
+             JOIN crawls c ON c.id = l.crawl_id
+             JOIN sites s ON s.id = c.site_id
+             WHERE l.crawl_id = $1 AND l.is_external
+               AND NOT EXISTS (
+                 SELECT 1 FROM unnest(s.ignore_link_patterns) p
+                 WHERE strpos(l.to_url_normalized, p) > 0
+               )) l
        LEFT JOIN external_urls e ON e.url_normalized = l.to_url_normalized
        ORDER BY
          e.last_checked IS NULL DESC,        -- not-yet-checked first
@@ -161,8 +174,15 @@ export async function listExternalLinksForCrawl(
       [crawlId, limit, offset],
     ),
     db.query<{ total: number }>(
-      `SELECT count(DISTINCT to_url_normalized)::int AS total
-       FROM links WHERE crawl_id = $1 AND is_external`,
+      `SELECT count(DISTINCT l.to_url_normalized)::int AS total
+       FROM links l
+       JOIN crawls c ON c.id = l.crawl_id
+       JOIN sites s ON s.id = c.site_id
+       WHERE l.crawl_id = $1 AND l.is_external
+         AND NOT EXISTS (
+           SELECT 1 FROM unnest(s.ignore_link_patterns) p
+           WHERE strpos(l.to_url_normalized, p) > 0
+         )`,
       [crawlId],
     ),
   ]);
@@ -179,8 +199,15 @@ export async function listExternalLinksForCrawl(
  */
 export async function countExternalUrls(db: Queryable, crawlId: number): Promise<number> {
   const { rows } = await db.query<{ total: number }>(
-    `SELECT count(DISTINCT to_url_normalized)::int AS total
-     FROM links WHERE crawl_id = $1 AND is_external`,
+    `SELECT count(DISTINCT l.to_url_normalized)::int AS total
+     FROM links l
+     JOIN crawls c ON c.id = l.crawl_id
+     JOIN sites s ON s.id = c.site_id
+     WHERE l.crawl_id = $1 AND l.is_external
+       AND NOT EXISTS (
+         SELECT 1 FROM unnest(s.ignore_link_patterns) p
+         WHERE strpos(l.to_url_normalized, p) > 0
+       )`,
     [crawlId],
   );
   const total = rows[0]?.total;

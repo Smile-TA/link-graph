@@ -45,7 +45,8 @@ function fakeDb(existing: SiteRow | null): { db: Queryable; upserted: unknown[] 
           sampleCeiling: null,
           rateLimit: 1.0,
           ignorePaths: [],
-          redirectTargetHost: params?.[11] as string | null,
+          ignoreLinkPatterns: [],
+          redirectTargetHost: params?.[12] as string | null,
         };
         return Promise.resolve({ rows: [row as unknown as R] } as QueryResult<R>);
       }
@@ -100,6 +101,7 @@ describe("syncRegistry: truthSource preservation", () => {
       sampleCeiling: null,
       rateLimit: 1.0,
       ignorePaths: [],
+      ignoreLinkPatterns: [],
       redirectTargetHost: null,
     };
     const { db } = fakeDb(existing);

@@ -28,6 +28,8 @@ import {
   withTransaction,
   type CrawlEnv,
   type CrawlMetricsInput,
+  type PageRow,
+  type Queryable,
   type SiteRow,
 } from "@link-graph/db";
 import {
@@ -154,22 +156,42 @@ export async function analyse(
     // as it stood before 2026-08-20, as 4 orphans and 6 soft orphans out of 13 with no
     // error at all, because a root with no links makes every other page unreachable.
     // The class names have changed since; the failure has not.
-    if (root.statusCode === null || root.statusCode < 200 || root.statusCode >= 300) {
+    //
+    // **A homepage that redirects is not the same failure as one that was never
+    // fetched.** `docs/notes.md` item 2 (zip.planenroll.com/ 301s to /agent, same
+    // host): the crawler deliberately does not follow a redirect to a different node
+    // (`fetch-page.ts`), so it recorded the 301 and queued `/agent` as its own page.
+    // Root-only, not a path-prefix pattern — every other page on this site 200s or
+    // 404s normally (verified by investigative probe, see the plan doc) — so treating
+    // the redirect target as the reachability root is safe here specifically, not a
+    // general "follow every redirect" rule: a redirect to a page this crawl never
+    // fetched is exactly the "no usable root" case this refusal exists for.
+    const effectiveRoot =
+      root.statusCode !== null && root.statusCode >= 300 && root.statusCode < 400
+        ? await resolveRedirectRoot(tx, crawlId, root)
+        : root;
+    if (
+      effectiveRoot === null ||
+      effectiveRoot.statusCode === null ||
+      effectiveRoot.statusCode < 200 ||
+      effectiveRoot.statusCode >= 300
+    ) {
       throw new Error(
         `analyse: crawl ${crawlId}'s homepage ${homeUrl} ` +
           `${root.statusCode === null ? "was never fetched" : `returned ${root.statusCode}`}` +
+          `${root.redirectTo === null ? "" : ` to ${root.redirectTo}, which was not itself fetched as a usable page`}` +
           `, so reachability has no usable root. Every other page would come out ` +
           `unreachable and every truth-source page an orphan.`,
       );
     }
 
     await markBoilerplateLinks(tx, crawlId, thresholdPct);
-    await computePageDepths(tx, crawlId, root.id);
+    await computePageDepths(tx, crawlId, effectiveRoot.id);
 
     const facts = await listPageAnalysisFacts(tx, crawlId);
     const classes = facts.map((page) => ({
       id: page.id,
-      class: classifyPage({ ...page, isCrawlRoot: page.id === root.id }, siteRules),
+      class: classifyPage({ ...page, isCrawlRoot: page.id === effectiveRoot.id }, siteRules),
     }));
     const written = await setPageClasses(tx, crawlId, classes);
     if (written !== classes.length) {
@@ -252,4 +274,19 @@ function homepageUrl(site: SiteRow, env: CrawlEnv): string {
     );
   }
   return home.href;
+}
+
+/**
+ * The page reachability is actually measured from, when the homepage itself redirects
+ * (301/302/303/307/308) to a different node (docs/notes.md item 2). `null` when there is nothing
+ * safe to fall back on — no recorded target, or a target this crawl never fetched as a
+ * usable page — which the caller reports as "no usable root", same as today.
+ */
+async function resolveRedirectRoot(
+  tx: Queryable,
+  crawlId: number,
+  root: PageRow,
+): Promise<PageRow | null> {
+  if (root.redirectTo === null) return null;
+  return findPageByUrl(tx, crawlId, root.redirectTo);
 }
