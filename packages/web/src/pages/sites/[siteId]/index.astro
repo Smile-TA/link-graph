@@ -1,0 +1,47 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import Notice from '../../../components/Notice.astro';
+import SiteTabs from '../../../components/SiteTabs.astro';
+import StaticViews from '../../../components/StaticViews.astro';
+import InteractiveView from '../../../components/InteractiveView';
+import { getCatalog, getSnapshot } from '../../../server/captures';
+import type { GraphSite } from '../../../server/captures';
+
+// Server-rendered per request (the pack prerendered one page per site at build time): the
+// site comes from the route, and an unknown one is a 404 rather than a missing static file.
+const site = (await getCatalog()).find((row: GraphSite) => row.siteId === Astro.params.siteId);
+if (!site) return new Response('Unknown site', { status: 404, headers: { 'content-type': 'text/plain' } });
+const snapshot = await getSnapshot(site.siteId);
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const formatDate = (value?: string | null) => {
+  if (!value) return 'Latest capture';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+};
+const originalHref = `/sites/${site.siteId}`;
+---
+<BaseLayout title={`${site.host} — Findings`} site={site} section="findings" originalHref={originalHref}>
+  <div class="page-head" id="findings-top" tabindex="-1">
+    <div><p class="eyebrow">Site / Findings</p><h1>{site.host}</h1><p class="page-intro">Review verified broken links and pages without inbound links in this capture.</p></div>
+    <div class="head-meta">Latest capture · {formatDate(site.latestCrawlAt)}</div>
+  </div>
+  <Notice site={site} description={snapshot.description} />
+  <div class="stat-grid stat-grid-four">
+    <div class="stat"><div class="stat-label">Pages captured</div><div class="stat-value">{site.pageCount.toLocaleString()}</div><div class="stat-sub">From this snapshot</div></div>
+    <div class="stat"><div class="stat-label">Orphan pages</div><div class="stat-value">{site.orphanCount ?? 'Unknown'}</div><div class="stat-sub">{site.orphanUnknownReason?.replaceAll('_', ' ') ?? 'Recorded crawl metric'}</div></div>
+    <div class="stat"><div class="stat-label">Unresolved internal links</div><div class="stat-value">{site.unresolvedInternalLinks.toLocaleString()}</div><div class="stat-sub">Unknown destinations, not broken</div></div>
+    <div class="stat"><div class="stat-label">Verified broken links</div><div class="stat-value">{site.brokenLinks.toLocaleString()}</div><div class="stat-sub">HTTP failures · list below</div></div>
+  </div>
+  <SiteTabs siteId={site.siteId} active="findings" />
+  <nav class="findings-shortcuts" aria-label="Findings shortcuts">
+    <span class="findings-shortcuts-label">Jump to</span>
+    <a href="#broken-links" class="network-action" data-testid="jump-broken-links">Broken links</a>
+    <a href="#orphan-pages" class="network-action" data-testid="jump-orphan-pages">Orphan pages</a>
+    <a href="#findings-top" class="network-action findings-shortcuts-top" data-testid="jump-findings-top">↑ Back to top</a>
+  </nav>
+  <div id="broken-links" class="findings-jump-target" tabindex="-1">
+    <InteractiveView client:load site={site} view="findings" dataUrl={`${base}/data/${site.siteId}.json`}>
+      <StaticViews site={site} snapshot={snapshot} view="findings" siteId={site.siteId} />
+    </InteractiveView>
+  </div>
+</BaseLayout>

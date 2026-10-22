@@ -1,0 +1,15 @@
+---
+const { siteId, active } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const tabs = [
+  { key: 'findings', label: 'Findings', path: '' },
+  { key: 'ego', label: 'Page network', path: '/ego?path=%2F' },
+  { key: 'pages', label: 'All page records', path: '/pages' },
+  { key: 'treemap', label: 'URL hierarchy', path: '/treemap' },
+  { key: 'distributions', label: 'Distributions', path: '/distributions' },
+  { key: 'section-matrix', label: 'Section matrix', path: '/section-matrix' },
+];
+---
+<nav class="tabbar" aria-label="Site analysis views">
+  {tabs.map((tab) => <a href={`${base}/sites/${siteId}${tab.path}`} class={`tab-link ${active === tab.key ? 'active' : ''}`} aria-current={active === tab.key ? 'page' : undefined} data-testid={`tab-${tab.key}`}>{tab.label}</a>)}
+</nav>

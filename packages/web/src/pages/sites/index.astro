@@ -1,0 +1,7 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import SiteCatalog from '../../components/SiteCatalog.astro';
+import { getCatalog } from '../../server/captures';
+const sites = await getCatalog();
+---
+<BaseLayout title="Sites"><SiteCatalog sites={sites} /></BaseLayout>

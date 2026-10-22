@@ -188,3 +188,56 @@ export async function findPageByUrl(
   );
   return rows[0] ?? null;
 }
+
+/** `LIKE` wildcards in the needle are escaped: a reader typing `100%` or `a_b` is looking
+ * for those characters, not a pattern. */
+function containsPattern(needle: string): string {
+  return `%${needle.replace(/[\\%_]/g, "\\$&")}%`;
+}
+
+/**
+ * Pages of one crawl whose path contains `needle`, shortest path first — the ego
+ * network's focus-page picker. `LIKE` wildcards in the needle are escaped: a reader
+ * typing `100%` or `a_b` is looking for those characters, not a pattern.
+ */
+export async function searchPagesByPath(
+  db: Queryable,
+  crawlId: number,
+  needle: string,
+  limit: number,
+): Promise<PageRow[]> {
+  const pattern = containsPattern(needle);
+  const { rows } = await db.query<PageRow>(
+    `SELECT ${PAGE_COLUMNS} FROM pages WHERE crawl_id = $1 AND path ILIKE $2
+     ORDER BY length(path), path LIMIT $3`,
+    [crawlId, pattern, limit],
+  );
+  return rows;
+}
+
+/**
+ * `searchPagesByPath` with a total and an offset, for the all-pages list's search box —
+ * same escaping, same ordering, but paged like `listPagesPage` so a search over a
+ * 60,000-page crawl never renders more than one page of it.
+ */
+export async function searchPagesPage(
+  db: Queryable,
+  crawlId: number,
+  needle: string,
+  limit: number,
+  offset: number,
+): Promise<PagedResult<PageRow>> {
+  const pattern = containsPattern(needle);
+  const [{ rows }, { rows: countRows }] = await Promise.all([
+    db.query<PageRow>(
+      `SELECT ${PAGE_COLUMNS} FROM pages WHERE crawl_id = $1 AND path ILIKE $2
+       ORDER BY url_normalized LIMIT $3 OFFSET $4`,
+      [crawlId, pattern, limit, offset],
+    ),
+    db.query<{ total: number }>(
+      `SELECT count(*)::int AS total FROM pages WHERE crawl_id = $1 AND path ILIKE $2`,
+      [crawlId, pattern],
+    ),
+  ]);
+  return { rows, total: countRows[0]?.total ?? 0 };
+}

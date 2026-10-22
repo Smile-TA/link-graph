@@ -38,7 +38,13 @@ import {
   upsertExternalUrls,
 } from "./repo/external-urls.js";
 import { insertLinks } from "./repo/links.js";
-import { listPages, listPagesPage, type PageInput } from "./repo/pages.js";
+import {
+  listPages,
+  listPagesPage,
+  searchPagesByPath,
+  searchPagesPage,
+  type PageInput,
+} from "./repo/pages.js";
 import { insertRegistryHealth, listRegistryHealth } from "./repo/registry-health.js";
 import {
   findSiteBySlug,
@@ -325,22 +331,27 @@ describe("external_urls", () => {
   });
 
   it("lists a crawl's external links paginated, worst-first, unchecked included via LEFT JOIN", async () => {
-    const crawl = await insertCompleteCrawl(db.pool, await makeSite(), new Date("2026-09-05T00:00:00Z"), {
-      pages: [
-        {
-          urlNormalized: "https://ext-links.example/",
-          path: "/",
-          postType: null,
-          statusCode: 200,
-          depth: 0,
-          inTruthSource: true,
-          indexable: true,
-          canonicalTo: null,
-          redirectTo: null,
-          class: null,
-        },
-      ],
-    });
+    const crawl = await insertCompleteCrawl(
+      db.pool,
+      await makeSite(),
+      new Date("2026-09-05T00:00:00Z"),
+      {
+        pages: [
+          {
+            urlNormalized: "https://ext-links.example/",
+            path: "/",
+            postType: null,
+            statusCode: 200,
+            depth: 0,
+            inTruthSource: true,
+            indexable: true,
+            canonicalTo: null,
+            redirectTo: null,
+            class: null,
+          },
+        ],
+      },
+    );
     const [page] = await listPages(db.pool, crawl.id);
     await insertLinks(db.pool, crawl.id, [
       {
@@ -431,9 +442,14 @@ describe("pages: listPagesPage", () => {
       redirectTo: null,
       class: "linked",
     });
-    const crawl = await insertCompleteCrawl(db.pool, await makeSite(), new Date("2026-09-06T00:00:00Z"), {
-      pages: ["/a/", "/b/", "/c/", "/d/", "/e/"].map(pageInput),
-    });
+    const crawl = await insertCompleteCrawl(
+      db.pool,
+      await makeSite(),
+      new Date("2026-09-06T00:00:00Z"),
+      {
+        pages: ["/a/", "/b/", "/c/", "/d/", "/e/"].map(pageInput),
+      },
+    );
 
     const firstPage = await listPagesPage(db.pool, crawl.id, 2, 0);
     expect(firstPage.total).toBe(5);
@@ -444,6 +460,48 @@ describe("pages: listPagesPage", () => {
 
     const lastPage = await listPagesPage(db.pool, crawl.id, 2, 4);
     expect(lastPage.rows.map((r) => r.path)).toEqual(["/e/"]);
+  });
+});
+
+describe("pages: searchPagesByPath", () => {
+  it("matches a path substring, shortest first, and treats LIKE wildcards literally", async () => {
+    const pageInput = (path: string): PageInput => ({
+      urlNormalized: `https://search.example${path}`,
+      path,
+      postType: null,
+      statusCode: 200,
+      depth: 0,
+      inTruthSource: true,
+      indexable: true,
+      canonicalTo: null,
+      redirectTo: null,
+      class: "linked",
+    });
+    const crawl = await insertCompleteCrawl(
+      db.pool,
+      await makeSite(),
+      new Date("2026-09-07T00:00:00Z"),
+      {
+        pages: ["/blog/", "/blog/post-one/", "/about/", "/a_b/", "/axb/", "/100%/"].map(
+          pageInput,
+        ),
+      },
+    );
+
+    const blog = await searchPagesByPath(db.pool, crawl.id, "BLOG", 10);
+    expect(blog.map((r) => r.path)).toEqual(["/blog/", "/blog/post-one/"]);
+
+    expect(
+      (await searchPagesByPath(db.pool, crawl.id, "a_b", 10)).map((r) => r.path),
+    ).toEqual(["/a_b/"]);
+    expect(
+      (await searchPagesByPath(db.pool, crawl.id, "100%", 10)).map((r) => r.path),
+    ).toEqual(["/100%/"]);
+    expect(await searchPagesByPath(db.pool, crawl.id, "blog", 1)).toHaveLength(1);
+
+    const paged = await searchPagesPage(db.pool, crawl.id, "blog", 1, 1);
+    expect(paged.total).toBe(2);
+    expect(paged.rows.map((r) => r.path)).toEqual(["/blog/post-one/"]);
   });
 });
 

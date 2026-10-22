@@ -1,0 +1,85 @@
+---
+import type { GraphSite } from '../server/captures';
+import type { GraphSnapshot } from '@workspace/api-client-react';
+const { site, snapshot, view, siteId } = Astro.props as { site: GraphSite; snapshot: GraphSnapshot; view: string; siteId: string };
+const pages = snapshot.pages;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const pagePath = (url: string) => {
+  try { return new URL(url).pathname; } catch { return url; }
+};
+const sectionName = (path: string) => {
+  const bits = path.split('/').filter(Boolean);
+  return bits.length ? `/${bits[0]}/` : '/';
+};
+const sectionGroups = new Map<string, number>();
+const depths = new Map<string, number>();
+const inbound = new Map<string, number>();
+for (const page of pages) {
+  const path = page.path ?? pagePath(page.url);
+  const section = sectionName(path);
+  sectionGroups.set(section, (sectionGroups.get(section) ?? 0) + 1);
+  const depthName = page.depth === null ? 'No path from root' : `Depth ${page.depth}`;
+  depths.set(depthName, (depths.get(depthName) ?? 0) + 1);
+  const inboundName = `${page.inboundCount} inbound`;
+  inbound.set(inboundName, (inbound.get(inboundName) ?? 0) + 1);
+}
+const orderedSections = [...sectionGroups.entries()].sort((a, b) => b[1] - a[1]);
+const depthRows = [...depths.entries()].sort((a, b) => a[0] === 'No path from root' ? 1 : b[0] === 'No path from root' ? -1 : Number(a[0].slice(6)) - Number(b[0].slice(6)));
+const inboundRows = [...inbound.entries()].sort((a, b) => Number(a[0].split(' ')[0]) - Number(b[0].split(' ')[0]));
+const maxDepth = Math.max(1, ...depthRows.map(([, count]) => count));
+const maxInbound = Math.max(1, ...inboundRows.map(([, count]) => count));
+const initialPages = pages.slice(0, 25);
+const initialBroken = snapshot.brokenLinks.slice(0, 25);
+const initialOrphans = pages.filter((page) => page.pageClass === 'orphan').slice(0, 25);
+---
+{view === 'pages' && <section class="panel page-explorer" aria-label={`All pages for ${site.host}`}>
+  <div class="finding-panel-head page-explorer-head">
+    <div><h2 class="explorer-title">All page records</h2><p class="explorer-note">Open any page’s ego network to inspect its incoming and outgoing links.</p></div>
+  </div>
+  <div class="explorer-result-count">Showing {Math.min(25, pages.length)} of {pages.length} captured pages in this static preview.</div>
+  <ul class="static-data-list">{initialPages.map((page) => <li class="static-data-row"><div class="explorer-page"><a class="site-link" href={`${base}/sites/${siteId}/ego?path=${encodeURIComponent(page.path ?? pagePath(page.url))}`}>{page.path ?? pagePath(page.url)}</a><div class="finding-title">{page.title}</div><span class="explorer-note">{page.inboundCount} inbound · {page.outboundCount} outbound{page.pageClass === 'orphan' ? ' · Orphan page' : ''}{!page.statusCode ? ' · HTTP unverified' : ''}</span></div></li>)}</ul>
+  {pages.length > 25 && <p class="static-note">This no-JavaScript preview shows the first 25 of {pages.length} actual pages. Search and paging are available in the interactive view.</p>}
+</section>}
+
+{view === 'findings' && <div>
+  <section class="panel broken-links-panel" aria-label="Site broken links">
+    <div class="finding-panel-head"><div><h2 class="explorer-title">Broken links</h2><p class="explorer-note">Verified HTTP failures only. Unresolved targets are not counted as broken links.</p></div><span class="broken-count">{snapshot.brokenLinks.length} verified links</span></div>
+    {snapshot.brokenLinks.length ? <div class="broken-table-scroll"><table class="broken-table"><thead><tr><th>Source page</th><th>Broken destination</th><th>Status</th><th>Inspect</th></tr></thead><tbody>{initialBroken.map((row) => <tr><td><a class="site-link" href={`${base}/sites/${siteId}/ego?path=${encodeURIComponent(pagePath(row.fromUrl))}`}>{pagePath(row.fromUrl)}</a><div class="explorer-note">{row.anchor || 'No anchor text'}</div></td><td><span class="broken-url">{row.toUrl}</span></td><td><span class="http-error">HTTP {row.statusCode} · verified</span></td><td><a class="network-action" href={`${base}/sites/${siteId}/ego?path=${encodeURIComponent(pagePath(row.fromUrl))}`}>View network</a></td></tr>)}</tbody></table></div> : <div class="broken-empty">No verified broken links in this capture.</div>}
+    {snapshot.brokenLinks.length > 25 && <p class="static-note">Showing the first 25 of {snapshot.brokenLinks.length} actual broken-link findings. Filters and paging are available in the interactive view.</p>}
+    {site.unresolvedInternalLinks > 0 && <p class="broken-unresolved"><strong>Unresolved internal targets:</strong> {site.unresolvedInternalLinks} site-wide. Their HTTP status is unverified, so they are not listed as broken links.</p>}
+  </section>
+  <div class="findings-grid findings-jump-target" id="orphan-pages">
+    <section class="panel" aria-label="Orphan pages">
+      <div class="finding-panel-head"><div><h2 class="explorer-title">Orphan pages</h2><p class="explorer-note">Pages with no incoming internal links in the captured graph. Review notes are local to this browser.</p></div><span class="finding-count">{site.orphanCount ?? 'Unknown'} pages</span></div>
+      {initialOrphans.length ? <ul class="static-data-list">{initialOrphans.map((page) => <li class="static-data-row"><div><a class="site-link" href={`${base}/sites/${siteId}/ego?path=${encodeURIComponent(page.path ?? pagePath(page.url))}`}>{page.path ?? pagePath(page.url)}</a><div class="finding-title">{page.title}</div></div><a class="network-action" href={`${base}/sites/${siteId}/ego?path=${encodeURIComponent(page.path ?? pagePath(page.url))}`}>View network</a></li>)}</ul> : <div class="broken-empty">No orphan pages are recorded for this capture.</div>}
+      {site.orphanCount !== null && site.orphanCount > 25 && <p class="static-note">Showing the first 25 orphan page rows from the actual capture.</p>}
+    </section>
+    <aside><div class="panel side-card"><p class="eyebrow">How to read this</p><h3>Find a way in</h3><p>An orphan page has no incoming internal links in the captured site graph. Review whether it should be discoverable from a relevant page.</p></div><div class="panel side-card"><p class="eyebrow">Scope note</p><h3>Recorded link evidence</h3><p>Unresolved internal targets are unverified, not broken. Only captured HTTP failures are listed as broken links. No new link checks are performed.</p></div><div class="panel side-card"><p class="eyebrow">Capture label</p><p style="color:#142D5F;font-weight:600">{site.sampleLabel}</p></div></aside>
+  </div>
+</div>}
+
+{view === 'treemap' && <div>
+  <div class="view-heading"><div><h2>URL hierarchy</h2><p>Pages grouped by the first path segment. Tile size reflects page count in each group.</p></div><span class="mono">{orderedSections.length} {orderedSections.length === 1 ? 'section' : 'sections'}</span></div>
+  <div class="panel tree-wrap">
+    {pages.length ? <><div class="tree-crumb">SITE ROOT &nbsp;›&nbsp; PATH GROUPS · {Math.min(50, orderedSections.length)} of {orderedSections.length} sections</div><div class="treemap">{orderedSections.slice(0, 50).map(([path, count], index) => <div class={`tree-tile ${index === 0 && count > 1 ? 'large' : ''}`} style={`flex-grow:${count}`}><div class="tree-path">{path}</div><div><div class="tree-count">{count}</div><div class="tree-label">{count === 1 ? 'page record' : 'page records'}</div></div></div>)}</div><p class="static-note">Section counts use all {pages.length} captured page records. The interactive view supports searching sections.</p></> : <div class="empty-state"><h3>No URL paths to map yet</h3><p>No page records exist in this capture.</p></div>}
+  </div>
+</div>}
+
+{view === 'distributions' && <div>
+  <div class="view-heading"><div><h2>Page depth &amp; links</h2><p>Understand how many steps from the entry point and how inbound links are spread.</p></div><span class="mono">{pages.length} page rows</span></div>
+  <div class="distribution-grid">
+    {[{ title: 'Page depth', note: 'Number of pages at each recorded depth.', rows: depthRows, max: maxDepth }, { title: 'Inbound links', note: 'Number of pages with each recorded inbound-link count.', rows: inboundRows, max: maxInbound }].map((chart) => <div class="panel chart-panel"><div class="section-title"><h2>{chart.title}</h2><span class="mono">{chart.rows.length} groups</span></div><p style="color:#555;font-size:10px;margin:-5px 0 17px">{chart.note}</p>{chart.rows.map(([label, count]) => <div class="chart-row"><span class="chart-label">{label}</span><div class="chart-track"><span style={`width:${Math.max(2, count / chart.max * 100)}%`}></span></div><span class="chart-count">{count}</span></div>)}</div>)}
+  </div>
+  <div class="panel panel-pad" style="margin-top:17px"><div class="section-title"><h2>Read the pattern</h2><span class="mono">RECORDED PAGE VALUES</span></div><p style="color:#555;font-size:11px;line-height:1.65;margin:0">A page’s depth describes its distance in the captured link structure. Inbound links count internal pages that link to it. The charts summarize all page rows; they do not estimate missing crawl data.</p></div>
+</div>}
+
+{view === 'section-matrix' && <div>
+  <div class="view-heading"><div><h2>Section relationships</h2><p>Contextual internal links between captured URL sections; repeated header and footer links are excluded.</p></div><span class="mono">Interactive connection evidence loads on demand</span></div>
+  <div class="panel panel-pad"><p class="explorer-note">The section matrix is based on contextual link edges. This static snapshot stores page records and broken-link evidence; connection detail is loaded by the interactive view only.</p><p class="static-note">The complete section list is summarized from all {pages.length} captured pages.</p><div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:12px">{orderedSections.slice(0, 25).map(([name, count]) => <span class="hop-badge">{name} · {count}</span>)}</div></div>
+</div>}
+
+{view === 'ego' && <div class="panel panel-pad">
+  <div class="view-heading"><div><h2>Page network</h2><p>Inspect captured incoming and outgoing links around a page.</p></div></div>
+  <p class="explorer-note">Network connections load on demand from the captured crawl. Choose a page in the interactive view to explore searchable neighborhoods, hop depth, directions, and external destinations.</p>
+  <p class="static-note">This capture contains {pages.length} page records. The network itself is not inferred from summary counts.</p>
+</div>}

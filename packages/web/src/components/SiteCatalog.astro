@@ -1,0 +1,118 @@
+---
+import Notice from './Notice.astro';
+import type { GraphSite } from '../server/captures';
+const { sites } = Astro.props as { sites: GraphSite[] };
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const totalPages = sites.reduce((sum, site) => sum + site.pageCount, 0);
+const knownOrphans = sites.reduce((sum, site) => sum + (site.orphanCount ?? 0), 0);
+const unresolved = sites.reduce((sum, site) => sum + site.unresolvedInternalLinks, 0);
+const broken = sites.reduce((sum, site) => sum + site.brokenLinks, 0);
+const unknownOrphanSites = sites.filter(site => site.orphanCount === null).length;
+const formatDate = (value?: string | null) => {
+  if (!value) return 'Not captured';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+};
+const columns = [
+  ['host', 'Site'], ['pageCount', 'Pages'], ['orphanCount', 'Orphans'], ['brokenLinks', 'Broken links'], ['unresolvedInternalLinks', 'Unresolved links'], ['latestCrawlAt', 'Latest capture'],
+  // Added to the pack's table: the crawl history and schedule this app's sites list has always shown.
+  ['crawlCount', 'Crawls'], ['nextCrawl', 'Next crawl'], ['status', 'Status'],
+];
+---
+<div class="page-head">
+  <div><p class="eyebrow">Link intelligence / Workspace</p><h1>Sites</h1><p class="page-intro">A clear view of the places your content connects — and the pages that may need a path in.</p></div>
+  <div class="head-meta">{sites.length} imported sites<br />Read-only database snapshot</div>
+</div>
+<Notice />
+<div class="overview-grid">
+  <section class="panel" aria-label="Sites table">
+    <div class="finding-panel-head"><div><div class="section-title" style="margin:0"><h2>Available site captures</h2></div><p style="color:#555;font-size:11px;margin:6px 0 0">Open a capture to review its link structure.</p></div><span class="mono" style="color:#555">POSTGRESQL</span></div>
+    <div class="site-search-toolbar" role="search" aria-label="Search sites">
+      <label class="page-search site-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><span class="sr-only">Search sites by name or domain</span><input data-site-search type="search" placeholder="Search sites by name or domain…" data-testid="input-site-search" /></label>
+      <span class="site-search-count" data-site-count role="status" aria-live="polite">{sites.length} of {sites.length} sites</span>
+      <button type="button" class="network-action" data-clear-search data-testid="clear-site-search">Clear</button>
+    </div>
+    <p class="mobile-table-hint">Scroll horizontally to view and sort all columns.</p>
+    <div style="overflow-x:auto" class="static-table-fallback">
+      <table class="site-table" data-site-table>
+        <thead><tr>{columns.map(([key, label]) => <th aria-sort={key === 'host' ? 'ascending' : 'none'}><button class="site-sort" type="button" data-sort={key} data-testid={`sort-sites-${key}`}>{label}<span aria-hidden="true">↕</span></button></th>)}</tr></thead>
+        <tbody>{sites.map(site => <tr data-site-row data-host={site.host} data-page-count={site.pageCount} data-orphan-count={site.orphanCount ?? ''} data-broken-links={site.brokenLinks} data-unresolved-internal-links={site.unresolvedInternalLinks} data-latest-crawl-at={site.latestCrawlAt ?? ''} data-crawl-count={site.crawlCount} data-next-crawl={site.nextCrawl ?? ''} data-status={site.status} data-search={`${site.host} ${site.siteId} ${site.sampleLabel}`} data-testid={`row-site-${site.siteId}`}>
+          <td><div class="host-cell"><span class="host-glyph" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18"/></svg></span><div><a href={`${base}/sites/${site.siteId}`} class="site-link" data-testid={`link-site-${site.siteId}`}>{site.host}</a><div style="color:#666;font-size:10px;margin-top:3px">{site.sampleLabel}{site.enabled === false ? ' · Disabled in registry' : ''}</div></div></div></td>
+          <td class="mono">{site.pageCount}</td><td class="mono" title={site.orphanUnknownReason ?? undefined}>{site.orphanCount ?? 'Unknown'}</td>
+          <td class="mono" data-testid={`site-broken-links-${site.siteId}`} title="Verified internal HTTP failures">{site.brokenLinks}</td><td class="mono">{site.unresolvedInternalLinks}</td>
+          <td style="font-size:10px;white-space:nowrap">{site.latestCrawlAt ? formatDate(site.latestCrawlAt) : 'Not captured'}</td>
+          <td class="mono">{site.crawlCount}</td>
+          <td style="font-size:10px;white-space:nowrap">{site.nextCrawl ? formatDate(site.nextCrawl) : site.enabled ? '—' : 'Disabled'}</td>
+          <td class="mono">{site.status}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+    {sites.length === 0 && <div class="empty-state"><div class="empty-mark">—</div><h3>No site captures</h3><p>Site captures will appear here when imported data is available.</p></div>}
+  </section>
+  <section class="panel panel-pad">
+    <p class="eyebrow">Workspace summary</p><h2 style="font:500 22px var(--app-font-serif);color:#142D5F;margin:0 0 8px">{sites.length} sites to explore</h2>
+    <p style="font-size:11px;color:#555;line-height:1.6;margin-bottom:19px">Real captures from the imported database. Open a site to explore its latest production capture, findings, and individual page networks.</p>
+    <div class="stat-grid" style="grid-template-columns:1fr">
+      <div class="stat"><div class="stat-label">Pages in latest captures</div><div class="stat-value">{totalPages.toLocaleString()}</div></div>
+      <div class="stat"><div class="stat-label">Known orphan pages</div><div class="stat-value">{knownOrphans.toLocaleString()}</div>{unknownOrphanSites > 0 && <div class="stat-sub">{unknownOrphanSites} sites have unknown orphan totals</div>}</div>
+      <div class="stat"><div class="stat-label">Unresolved internal links</div><div class="stat-value">{unresolved.toLocaleString()}</div></div>
+      <div class="stat"><div class="stat-label">Verified broken links</div><div class="stat-value">{broken.toLocaleString()}</div></div>
+    </div>
+    <div class="overview-kicker"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11z"/><path d="m9 12 2 2 4-4"/></svg> Imported latest captures · no live crawl</div>
+  </section>
+</div>
+<script is:inline>
+  const table = document.querySelector('[data-site-table]');
+  const input = document.querySelector('[data-site-search]');
+  const count = document.querySelector('[data-site-count]');
+  if (table && input && count) {
+    const body = table.querySelector('tbody');
+    const rows = Array.from(body.querySelectorAll('tr'));
+    const params = new URLSearchParams(location.search);
+    input.value = params.get('q') || '';
+    const applySearch = () => {
+      const q = input.value.trim().toLowerCase();
+      let visible = 0;
+      rows.forEach(row => {
+        const match = row.dataset.search.toLowerCase().includes(q);
+        row.hidden = !match;
+        if (match) visible++;
+      });
+      count.textContent = `${visible} of ${rows.length} sites`;
+      const next = new URL(location.href);
+      q ? next.searchParams.set('q', input.value) : next.searchParams.delete('q');
+      history.replaceState({}, '', `${next.pathname}${next.search}${next.hash}`);
+    };
+    input.addEventListener('input', applySearch);
+    applySearch();
+    const sortRows = (button, order) => {
+      const key = button.dataset.sort;
+      const th = button.closest('th');
+      table.querySelectorAll('th').forEach(item => item.setAttribute('aria-sort', 'none'));
+      th.setAttribute('aria-sort', order);
+      const sign = order === 'ascending' ? 1 : -1;
+      rows.sort((a, b) => {
+        const av = a.dataset[key] || '';
+        const bv = b.dataset[key] || '';
+        if (!av) return !bv ? 0 : 1;
+        if (!bv) return -1;
+        const an = Number(av), bn = Number(bv);
+        const result = av && bv && Number.isFinite(an) && Number.isFinite(bn) ? an - bn : av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
+        return result * sign;
+      }).forEach(row => body.appendChild(row));
+      const next = new URL(location.href);
+      next.searchParams.set('sort', key);
+      next.searchParams.set('order', order === 'ascending' ? 'asc' : 'desc');
+      history.replaceState({}, '', `${next.pathname}${next.search}${next.hash}`);
+    };
+    const initialSort = params.get('sort') || 'host';
+    const initialOrder = params.get('order') === 'desc' ? 'descending' : 'ascending';
+    const initialButton = Array.from(table.querySelectorAll('[data-sort]')).find(button => button.dataset.sort === initialSort);
+    if (initialButton) sortRows(initialButton, initialOrder);
+    table.querySelectorAll('[data-sort]').forEach(button => button.addEventListener('click', () => {
+      const th = button.closest('th');
+      sortRows(button, th.getAttribute('aria-sort') === 'ascending' ? 'descending' : 'ascending');
+    }));
+    document.querySelector('[data-clear-search]')?.addEventListener('click', () => { input.value = ''; applySearch(); input.focus(); });
+  }
+</script>

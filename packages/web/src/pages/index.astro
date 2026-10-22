@@ -1,51 +1,7 @@
 ---
-import "../styles/global.css";
-import { listCrawlSummaries, listLatestCrawlMetricsPerSite, listSites } from "@link-graph/db";
-import { listNextCrawlTimes } from "@link-graph/scheduler";
-import { SitesTable, type SiteTableRow } from "../components/SitesTable";
-import { pool } from "../db";
-import { queues } from "../queues";
-
-// Four independent reads, not one join: `listCrawlSummaries`/`listLatestCrawlMetricsPerSite`
-// are Postgres, `listNextCrawlTimes` is Redis, and neither can fail because the other did —
-// a Redis blip must still render the sites list with its crawl history (docs/notes.md item 6).
-const [sites, summaries, nextRuns, metrics] = await Promise.all([
-  listSites(pool),
-  listCrawlSummaries(pool),
-  listNextCrawlTimes(queues.crawl),
-  listLatestCrawlMetricsPerSite(pool),
-]);
-const summaryBySiteId = new Map(summaries.map((s) => [s.siteId, s]));
-const metricsBySiteId = new Map(metrics.map((m) => [m.siteId, m]));
-
-function formatDate(date: Date | null | undefined): string {
-  return date === null || date === undefined ? "—" : date.toISOString().slice(0, 16).replace("T", " ");
-}
-
-const rows: SiteTableRow[] = sites.map((site) => {
-  const summary = summaryBySiteId.get(site.id);
-  const next = nextRuns.get(site.siteId);
-  const m = metricsBySiteId.get(site.id);
-  return {
-    siteId: site.siteId,
-    canonicalHost: site.canonicalHost,
-    href: `/sites/${site.siteId}/`,
-    lastCrawl: formatDate(summary?.lastFinishedAt),
-    crawlCount: summary?.completeCrawlCount ?? 0,
-    nextCrawl: site.enabled ? formatDate(next) : "disabled",
-    status: site.redirectTargetHost !== null ? "alias" : site.enabled ? "enabled" : "disabled",
-    broken: m?.broken ?? 0,
-    orphans: m?.orphans ?? null,
-  };
-});
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getCatalog } from '../server/captures';
+import SiteCatalog from '../components/SiteCatalog.astro';
+const sites = await getCatalog();
 ---
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>link-graph</title>
-  </head>
-  <body>
-    <h1>Sites</h1>
-    <SitesTable client:load rows={rows} />
-  </body>
-</html>
+<BaseLayout title="Sites"><SiteCatalog sites={sites} /></BaseLayout>

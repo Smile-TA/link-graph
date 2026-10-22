@@ -20,6 +20,10 @@
     "skipLibCheck": true,
     "noEmit": true
   },
+  // `packages/web` is the Astro app (JSX, `.astro` pages, the vendored Link Graph pack UI,
+  // browser globals): `astro check` type-checks it against its own tsconfig, which is what
+  // `npm run lint` runs for it.
+  "exclude": ["packages/web"],
   "include": [
     "packages/*/src/**/*.ts",
     "eslint.config.mjs",
