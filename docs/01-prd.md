@@ -202,7 +202,7 @@ looks orphaned. This is declarative config, not heuristics.
 
 Registry entries do not imply a live site. Each entry is probed and classified:
 
-`DNS resolves → serves HTTP → carries platform signature (Apache/2.4.68 + CloudFront)
+`DNS resolves → serves HTTP → carries platform signature (Apache/2.4.x + CloudFront)
 → /version.txt present`
 
 Measured drift as of 2026-08-18: 7 apps are registered but not platform-served
