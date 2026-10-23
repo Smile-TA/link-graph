@@ -30,6 +30,8 @@ const maxDepth = Math.max(1, ...depthRows.map(([, count]) => count));
 const maxInbound = Math.max(1, ...inboundRows.map(([, count]) => count));
 const initialPages = pages.slice(0, 25);
 const initialBroken = snapshot.brokenLinks.slice(0, 25);
+const brokenExternal = snapshot.brokenExternalLinks ?? [];
+const initialBrokenExternal = brokenExternal.slice(0, 25);
 const initialOrphans = pages.filter((page) => page.pageClass === 'orphan').slice(0, 25);
 ---
 {view === 'pages' && <section class="panel page-explorer" aria-label={`All pages for ${site.host}`}>
@@ -47,6 +49,11 @@ const initialOrphans = pages.filter((page) => page.pageClass === 'orphan').slice
     {snapshot.brokenLinks.length ? <div class="broken-table-scroll"><table class="broken-table"><thead><tr><th>Source page</th><th>Broken destination</th><th>Status</th><th>Inspect</th></tr></thead><tbody>{initialBroken.map((row) => <tr><td><a class="site-link" href={`${base}/sites/${siteId}/ego?path=${encodeURIComponent(pagePath(row.fromUrl))}`}>{pagePath(row.fromUrl)}</a><div class="explorer-note">{row.anchor || 'No anchor text'}</div></td><td><span class="broken-url">{row.toUrl}</span></td><td><span class="http-error">HTTP {row.statusCode} · verified</span></td><td><a class="network-action" href={`${base}/sites/${siteId}/ego?path=${encodeURIComponent(pagePath(row.fromUrl))}`}>View network</a></td></tr>)}</tbody></table></div> : <div class="broken-empty">No verified broken links in this capture.</div>}
     {snapshot.brokenLinks.length > 25 && <p class="static-note">Showing the first 25 of {snapshot.brokenLinks.length} actual broken-link findings. Filters and paging are available in the interactive view.</p>}
     {site.unresolvedInternalLinks > 0 && <p class="broken-unresolved"><strong>Unresolved internal targets:</strong> {site.unresolvedInternalLinks} site-wide. Their HTTP status is unverified, so they are not listed as broken links.</p>}
+  </section>
+  <section class="panel broken-links-panel" aria-label="Site broken external links">
+    <div class="finding-panel-head"><div><h2 class="explorer-title">Broken external links</h2><p class="explorer-note">Destinations the shared link check confirmed gone (HTTP 404 or 410). Third-party 403, 429, timeouts and other responses say nothing about the link, so they are not listed here.</p></div><span class="broken-count">{brokenExternal.length} confirmed links</span></div>
+    {brokenExternal.length ? <div class="broken-table-scroll"><table class="broken-table"><thead><tr><th>Source page</th><th>Broken destination</th><th>Status</th><th>Inspect</th></tr></thead><tbody>{initialBrokenExternal.map((row) => <tr><td><a class="site-link" href={`${base}/sites/${siteId}/ego?path=${encodeURIComponent(pagePath(row.fromUrl))}`}>{pagePath(row.fromUrl)}</a><div class="explorer-note">{row.anchor || 'No anchor text'}</div></td><td><span class="broken-url">{row.toUrl}</span></td><td><span class="http-error">HTTP {row.statusCode} · link check</span></td><td><a class="network-action" href={`${base}/sites/${siteId}/ego?path=${encodeURIComponent(pagePath(row.fromUrl))}`}>View network</a></td></tr>)}</tbody></table></div> : <div class="broken-empty">No confirmed broken external links in this capture. Links not yet checked, or checked without a conclusive answer, are not counted.</div>}
+    {brokenExternal.length > 25 && <p class="static-note">Showing the first 25 of {brokenExternal.length} confirmed broken external links. Filters and paging are available in the interactive view.</p>}
   </section>
   <div class="findings-grid findings-jump-target" id="orphan-pages">
     <section class="panel" aria-label="Orphan pages">

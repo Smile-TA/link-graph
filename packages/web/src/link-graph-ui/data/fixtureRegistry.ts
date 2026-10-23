@@ -5,6 +5,7 @@ export interface Fixture {
   pages: Page[];
   links: Link[];
   brokenLinks: BrokenLink[];
+  brokenExternalLinks?: BrokenLink[];
   source: 'recorded' | 'synthetic' | 'database';
   description: string;
 }

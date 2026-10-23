@@ -62,6 +62,14 @@ export interface GraphExternalLink {
   /** @nullable */
   isBoilerplate: boolean | null;
   count: number;
+  /**
+   * What the shared external link check concluded: `broken` is a confirmed 404/410,
+   * `unverified` says nothing about the link, `ok` answered, null was never checked.
+   * @nullable
+   */
+  externalCheck: 'broken' | 'unverified' | 'ok' | null;
+  /** @nullable */
+  externalStatusCode: number | null;
 }
 
 export interface GraphBrokenLink {
@@ -83,6 +91,8 @@ export interface GraphSnapshot {
   pages: GraphPage[];
   edges: GraphEdge[];
   brokenLinks: GraphBrokenLink[];
+  /** External links the link check confirmed gone (404/410); a separate list from `brokenLinks`. */
+  brokenExternalLinks: GraphBrokenLink[];
   source: GraphSnapshotSource;
   description: string;
 }

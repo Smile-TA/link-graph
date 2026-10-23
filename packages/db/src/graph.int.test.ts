@@ -9,10 +9,12 @@ import { listLatestCrawlsPerSite } from "./repo/crawls.js";
 import {
   countLinksPerCrawl,
   listGraphBrokenEdges,
+  listGraphBrokenExternalLinks,
   listGraphConnections,
   listGraphExternalLinks,
   listGraphPages,
 } from "./repo/graph.js";
+import { upsertExternalUrls } from "./repo/external-urls.js";
 import { insertLinks, type LinkInput } from "./repo/links.js";
 import { listPages, type PageInput } from "./repo/pages.js";
 import { upsertSite } from "./repo/sites.js";
@@ -59,11 +61,24 @@ beforeAll(async () => {
   });
   siteId = site.id;
   // Paths chosen so `path` order differs from insert order: /b/ is inserted first.
-  const crawl = await insertCompleteCrawl(db.pool, siteId, new Date("2026-10-01T00:00:00Z"), {
-    pages: [page("/b/"), page("/a/"), page("/c/"), page("/gone/", 404), page("/never/", null)],
-  });
+  const crawl = await insertCompleteCrawl(
+    db.pool,
+    siteId,
+    new Date("2026-10-01T00:00:00Z"),
+    {
+      pages: [
+        page("/b/"),
+        page("/a/"),
+        page("/c/"),
+        page("/gone/", 404),
+        page("/never/", null),
+      ],
+    },
+  );
   crawlId = crawl.id;
-  const ids = new Map((await listPages(db.pool, crawlId)).map((row) => [row.path, row.id]));
+  const ids = new Map(
+    (await listPages(db.pool, crawlId)).map((row) => [row.path, row.id]),
+  );
   const id = (path: string) => ids.get(path) as number;
   // `(crawl, from page, dom_index)` is unique: each link a page carries has its own position.
   const nextIndex = new Map<string, number>();
@@ -80,7 +95,8 @@ beforeAll(async () => {
     isExternal: false,
     isBoilerplate: false,
     container: "main",
-    domIndex: (nextIndex.set(from, (nextIndex.get(from) ?? -1) + 1), nextIndex.get(from) ?? 0),
+    domIndex:
+      (nextIndex.set(from, (nextIndex.get(from) ?? -1) + 1), nextIndex.get(from) ?? 0),
     ...over,
   });
   await insertLinks(db.pool, crawlId, [
@@ -97,6 +113,45 @@ beforeAll(async () => {
       toUrlNormalized: "https://elsewhere.example/x",
       anchor: "ext",
     }),
+    // Four destinations the link check judged differently, and one it never reached.
+    ...(
+      [
+        ["gone", "dead-ext"],
+        ["blocked", "blocked-ext"],
+        ["fine", "fine-ext"],
+        ["unchecked", "unchecked-ext"],
+      ] as const
+    ).map(([slug, anchor]) =>
+      edge("/b/", null, {
+        isExternal: true,
+        toUrlNormalized: `https://elsewhere.example/${slug}`,
+        anchor,
+      }),
+    ),
+  ]);
+  const checked = new Date("2026-10-01T00:00:00Z");
+  await upsertExternalUrls(db.pool, [
+    {
+      urlNormalized: "https://elsewhere.example/gone",
+      lastChecked: checked,
+      statusCode: 404,
+      unverified: false,
+      detail: null,
+    },
+    {
+      urlNormalized: "https://elsewhere.example/blocked",
+      lastChecked: checked,
+      statusCode: 403,
+      unverified: true,
+      detail: "bot protection",
+    },
+    {
+      urlNormalized: "https://elsewhere.example/fine",
+      lastChecked: checked,
+      statusCode: 200,
+      unverified: false,
+      detail: null,
+    },
   ]);
 });
 afterAll(async () => {
@@ -106,7 +161,13 @@ afterAll(async () => {
 describe("listGraphPages", () => {
   it("orders by path then id and counts distinct internal neighbours, self-links excluded", async () => {
     const pages = await listGraphPages(db.pool, crawlId);
-    expect(pages.map((row) => row.path)).toEqual(["/a/", "/b/", "/c/", "/gone/", "/never/"]);
+    expect(pages.map((row) => row.path)).toEqual([
+      "/a/",
+      "/b/",
+      "/c/",
+      "/gone/",
+      "/never/",
+    ]);
     const a = pages[0];
     // /a/ is linked from /c/ only (its self-link does not count) and links to /b/, /gone/.
     expect(a).toMatchObject({ inboundCount: 1, outboundCount: 2, pageClass: "linked" });
@@ -127,15 +188,28 @@ describe("listGraphConnections", () => {
       count: 2,
     });
     expect(edges.some((row) => row.from === row.to)).toBe(false);
-    expect(edges).toContainEqual(expect.objectContaining({ from: 2, to: 0, container: "footer", isBoilerplate: true }));
+    expect(edges).toContainEqual(
+      expect.objectContaining({
+        from: 2,
+        to: 0,
+        container: "footer",
+        isBoilerplate: true,
+      }),
+    );
     // Unresolved and external links are not graph edges.
     expect(edges.every((row) => row.to <= 4)).toBe(true);
   });
 
   it("scopes to a neighbourhood: one hop is the focus page's direct links, either way", async () => {
-    const oneHop = await listGraphConnections(db.pool, crawlId, { path: "/gone/", hops: 1 });
+    const oneHop = await listGraphConnections(db.pool, crawlId, {
+      path: "/gone/",
+      hops: 1,
+    });
     expect(oneHop).toEqual([expect.objectContaining({ from: 0, to: 3, anchor: "dead" })]);
-    const twoHops = await listGraphConnections(db.pool, crawlId, { path: "/gone/", hops: 2 });
+    const twoHops = await listGraphConnections(db.pool, crawlId, {
+      path: "/gone/",
+      hops: 2,
+    });
     expect(twoHops.length).toBeGreaterThan(oneHop.length);
   });
 });
@@ -143,17 +217,52 @@ describe("listGraphConnections", () => {
 describe("listGraphExternalLinks", () => {
   it("returns recorded external evidence grouped by source, destination and anchor", async () => {
     const rows = await listGraphExternalLinks(db.pool, crawlId);
-    expect(rows).toEqual([
+    expect(rows.find((row) => row.anchor === "ext")).toEqual({
+      fromUrl: `${host}/a/`,
+      toUrl: "https://elsewhere.example/x",
+      anchor: "ext",
+      container: "main",
+      isBoilerplate: false,
+      count: 1,
+      externalCheck: null,
+      externalStatusCode: null,
+    });
+    expect(
+      await listGraphExternalLinks(db.pool, crawlId, { path: "/c/", hops: 1 }),
+    ).toEqual([]);
+  });
+});
+
+describe("external link checks", () => {
+  it("carries what the link check concluded: only a confirmed 404/410 is broken", async () => {
+    const rows = await listGraphExternalLinks(db.pool, crawlId);
+    const byAnchor = Object.fromEntries(
+      rows.map((row) => [row.anchor, [row.externalCheck, row.externalStatusCode]]),
+    );
+    expect(byAnchor).toMatchObject({
+      "dead-ext": ["broken", 404],
+      "blocked-ext": ["unverified", 403],
+      "fine-ext": ["ok", 200],
+      "unchecked-ext": [null, null],
+    });
+    expect(rows).toHaveLength(5); // grouping is unchanged by the join
+  });
+
+  it("lists confirmed-broken external links separately, never the unverified or unchecked", async () => {
+    expect(await listGraphBrokenExternalLinks(db.pool, crawlId)).toEqual([
       {
-        fromUrl: `${host}/a/`,
-        toUrl: "https://elsewhere.example/x",
-        anchor: "ext",
-        container: "main",
-        isBoilerplate: false,
-        count: 1,
+        fromUrl: `${host}/b/`,
+        toUrl: "https://elsewhere.example/gone",
+        statusCode: 404,
+        anchor: "dead-ext",
       },
     ]);
-    expect(await listGraphExternalLinks(db.pool, crawlId, { path: "/c/", hops: 1 })).toEqual([]);
+  });
+
+  it("does not move the internal broken definition", async () => {
+    expect(
+      (await listGraphBrokenEdges(db.pool, crawlId)).map((row) => row.toUrl),
+    ).toEqual([`${host}/gone/`]);
   });
 });
 
@@ -167,14 +276,19 @@ describe("listGraphBrokenEdges", () => {
 
 describe("catalog helpers", () => {
   it("counts every link row per crawl", async () => {
-    expect((await countLinksPerCrawl(db.pool, [crawlId])).get(crawlId)).toBe(9);
+    expect((await countLinksPerCrawl(db.pool, [crawlId])).get(crawlId)).toBe(13);
     expect((await countLinksPerCrawl(db.pool, [])).size).toBe(0);
   });
 
   it("finds each site's latest complete production crawl", async () => {
-    const later = await insertCompleteCrawl(db.pool, siteId, new Date("2026-10-08T00:00:00Z"), {
-      pages: [page("/")],
-    });
+    const later = await insertCompleteCrawl(
+      db.pool,
+      siteId,
+      new Date("2026-10-08T00:00:00Z"),
+      {
+        pages: [page("/")],
+      },
+    );
     const latest = await listLatestCrawlsPerSite(db.pool);
     expect(latest).toEqual([expect.objectContaining({ siteId, crawlId: later.id })]);
   });

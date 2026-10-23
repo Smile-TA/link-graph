@@ -15,6 +15,7 @@ import {
   countLinksPerCrawl,
   listCrawlSummaries,
   listGraphBrokenEdges,
+  listGraphBrokenExternalLinks,
   listGraphPages,
   listLatestCrawlMetricsPerSite,
   listLatestCrawlsPerSite,
@@ -113,7 +114,7 @@ export async function getCatalog(): Promise<GraphSite[]> {
 }
 
 const SNAPSHOT_CACHE_SIZE = 6;
-const snapshots = new Map<string, Promise<GraphSnapshot>>();
+const snapshots = new Map<string, Promise<Omit<GraphSnapshot, "brokenExternalLinks">>>();
 
 /**
  * One site's latest capture without its edges — pages and broken links only. Edges are
@@ -122,13 +123,26 @@ const snapshots = new Map<string, Promise<GraphSnapshot>>();
  * not something to rebuild per request.
  */
 export async function getSnapshot(siteId: string): Promise<GraphSnapshot> {
+  const capture = await getCapture(siteId);
+  // Not part of the cached capture: the link check runs after a crawl completes and keeps
+  // rewriting `external_urls` as URLs come due, with no change to the capture's identity.
+  const brokenExternalLinks =
+    capture.site.crawlId === null
+      ? []
+      : await listGraphBrokenExternalLinks(pool, Number(capture.site.crawlId));
+  return { ...capture, brokenExternalLinks };
+}
+
+async function getCapture(
+  siteId: string,
+): Promise<Omit<GraphSnapshot, "brokenExternalLinks">> {
   const site = (await getCatalog()).find((row) => row.siteId === siteId);
   if (site === undefined) throw new Error(`unknown site ${siteId}`);
   const key = `${site.siteId}:${site.captureVersion ?? ""}`;
   const cached = snapshots.get(key);
   if (cached !== undefined) return cached;
 
-  const task = (async (): Promise<GraphSnapshot> => {
+  const task = (async (): Promise<Omit<GraphSnapshot, "brokenExternalLinks">> => {
     const crawlId = site.crawlId === null ? null : Number(site.crawlId);
     const [pages, brokenLinks] =
       crawlId === null

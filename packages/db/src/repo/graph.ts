@@ -32,7 +32,10 @@ export interface GraphPage {
 }
 
 /** Every page of a crawl in the order edge positions refer to. */
-export async function listGraphPages(db: Queryable, crawlId: number): Promise<GraphPage[]> {
+export async function listGraphPages(
+  db: Queryable,
+  crawlId: number,
+): Promise<GraphPage[]> {
   const { rows } = await db.query<GraphPage>(
     `WITH inbound AS (
        SELECT to_page_id, count(DISTINCT from_page_id)::int AS n FROM links
@@ -140,6 +143,28 @@ export async function listGraphConnections(
   return rows;
 }
 
+/**
+ * What the shared external link check (`external_urls`) concluded about a destination:
+ * `broken` is a confirmed 404/410, `unverified` is a response that says nothing about the
+ * link (a third party's bot protection, a timeout), `ok` answered, and `null` was never
+ * checked. Only `broken` may be drawn as a defect.
+ */
+export type ExternalCheck = "broken" | "unverified" | "ok" | null;
+
+/**
+ * The linkcheck verdict's "resource is absent" rule (`RESOURCE_IS_ABSENT` in
+ * `packages/linkcheck/src/verdict.ts`), narrower than the internal `status_code >= 400`
+ * on purpose: for a third party a 403 is a fact about their WAF, not about the link.
+ * Kept here, not imported, because `db` sits below `linkcheck`.
+ */
+export const BROKEN_EXTERNAL_URL = `x.status_code IN (404, 410) AND NOT x.unverified`;
+
+const EXTERNAL_CHECK = `CASE
+  WHEN x.last_checked IS NULL THEN NULL
+  WHEN ${BROKEN_EXTERNAL_URL} THEN 'broken'
+  WHEN x.unverified THEN 'unverified'
+  ELSE 'ok' END`;
+
 export interface GraphExternalLink {
   readonly fromUrl: string;
   readonly toUrl: string;
@@ -147,6 +172,9 @@ export interface GraphExternalLink {
   readonly container: string;
   readonly isBoilerplate: boolean | null;
   readonly count: number;
+  readonly externalCheck: ExternalCheck;
+  /** The status the check recorded; `null` when none got that far. */
+  readonly externalStatusCode: number | null;
 }
 
 /**
@@ -162,14 +190,19 @@ export async function listGraphExternalLinks(
 ): Promise<GraphExternalLink[]> {
   const columns = `
     SELECT p.url_normalized AS "fromUrl", l.to_url_normalized AS "toUrl", l.anchor,
-           l.container, l.is_boilerplate AS "isBoilerplate", count(*)::int AS count
+           l.container, l.is_boilerplate AS "isBoilerplate", count(*)::int AS count,
+           ${EXTERNAL_CHECK} AS "externalCheck", x.status_code AS "externalStatusCode"
     FROM links l JOIN pages p ON p.crawl_id = l.crawl_id AND p.id = l.from_page_id
+    LEFT JOIN external_urls x ON x.url_normalized = l.to_url_normalized
     WHERE l.crawl_id = $1 AND l.is_external`;
   const grouping = `
-    GROUP BY p.url_normalized, l.to_url_normalized, l.anchor, l.container, l.is_boilerplate
+    GROUP BY p.url_normalized, l.to_url_normalized, l.anchor, l.container, l.is_boilerplate,
+             x.last_checked, x.status_code, x.unverified
     ORDER BY p.url_normalized, l.to_url_normalized, l.anchor, l.container, l.is_boilerplate`;
   if (scope === undefined) {
-    const { rows } = await db.query<GraphExternalLink>(`${columns} ${grouping}`, [crawlId]);
+    const { rows } = await db.query<GraphExternalLink>(`${columns} ${grouping}`, [
+      crawlId,
+    ]);
     return rows;
   }
   const { rows } = await db.query<GraphExternalLink>(
@@ -191,6 +224,28 @@ export async function listGraphExternalLinks(
        )
      ${grouping}`,
     [crawlId, scope.path, scope.hops],
+  );
+  return rows;
+}
+
+/**
+ * Every external link whose destination the link check confirmed gone
+ * (`BROKEN_EXTERNAL_URL`). A separate list from the internal one: the two definitions are
+ * deliberately different, so their counts are never added together.
+ */
+export async function listGraphBrokenExternalLinks(
+  db: Queryable,
+  crawlId: number,
+): Promise<GraphBrokenEdge[]> {
+  const { rows } = await db.query<GraphBrokenEdge>(
+    `SELECT f.url_normalized AS "fromUrl", l.to_url_normalized AS "toUrl",
+            x.status_code AS "statusCode", l.anchor
+     FROM links l
+     JOIN pages f ON f.crawl_id = l.crawl_id AND f.id = l.from_page_id
+     JOIN external_urls x ON x.url_normalized = l.to_url_normalized
+     WHERE l.crawl_id = $1 AND l.is_external AND ${BROKEN_EXTERNAL_URL}
+     ORDER BY l.id`,
+    [crawlId],
   );
   return rows;
 }

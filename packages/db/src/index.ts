@@ -106,6 +106,8 @@ export {
   listGraphConnections,
   listGraphExternalLinks,
   listGraphBrokenEdges,
+  listGraphBrokenExternalLinks,
+  BROKEN_EXTERNAL_URL,
   countLinksPerCrawl,
 } from "./repo/graph.js";
 export type {
@@ -114,6 +116,7 @@ export type {
   GraphScope,
   GraphExternalLink,
   GraphBrokenEdge,
+  ExternalCheck,
 } from "./repo/graph.js";
 export {
   upsertCrawlMetrics,

@@ -415,3 +415,5 @@ a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible
 .graph-node.locate-highlight { z-index: 5; border-color: #e8a317; box-shadow: 0 0 0 3px #f7c948, 0 0 18px 6px rgba(247,201,72,.75); animation: locate-pulse 1s ease-in-out 3; }
 @keyframes locate-pulse { 50% { box-shadow: 0 0 0 6px #f7c948, 0 0 28px 12px rgba(247,201,72,.9); } }
 @media (prefers-reduced-motion: reduce) { .graph-node.locate-highlight { animation: none; } }
+.graph-node.external-node.broken-node { border: 1px dashed #d92d20; background: #fff0ee; color: #a5261e; }
+.external-node.broken-node .external-node-label { color: #a5261e; }

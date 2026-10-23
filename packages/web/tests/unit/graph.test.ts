@@ -40,6 +40,15 @@ describe('Captured graph evidence', () => {
     expect(limitEgoNodes(nodes, 2).map(n => n.page.path)).toEqual(['/z-gone/', '/a/']);
     expect(limitEgoNodes(nodes, 8).map(n => n.page.path)).toEqual(['/z-gone/', '/a/', '/b/', '/c/']);
   });
+  it('marks only link-check-confirmed external destinations as broken, and draws them first', () => {
+    const ext = (slug: string, externalCheck: 'broken' | 'unverified' | 'ok' | null, externalStatusCode: number | null) =>
+      ({ fromUrl: root, toUrl: `https://elsewhere.test/${slug}`, isExternal: true, anchor: slug, container: 'main', isBoilerplate: false, externalCheck, externalStatusCode });
+    const result = getEgoNetwork(pages, [...links, ext('a-blocked', 'unverified', 403), ext('b-fine', 'ok', 200), ext('c-unchecked', null, null), ext('z-gone', 'broken', 404)], root, 1, 'all', true);
+    const status = Object.fromEntries(result.nodes.filter(node => node.page.isExternal).map(node => [node.page.url.split('/').pop(), node.page.statusCode]));
+    expect(status).toEqual({ 'a-blocked': null, 'b-fine': null, 'c-unchecked': null, 'z-gone': 404 });
+    const shown = limitEgoNodes(result.nodes, 1).filter(node => node.page.isExternal);
+    expect(shown.map(node => node.page.url)).toEqual(['https://elsewhere.test/z-gone']);
+  });
   it('handles absent focus and empty captures', () => {
     expect(getEgoNetwork([], [], root, 2, 'all').nodes).toEqual([]);
     expect(getEgoNetwork(pages, links, 'https://absent.test/', 1, 'all').links).toEqual([]);

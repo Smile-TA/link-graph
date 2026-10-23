@@ -25,7 +25,9 @@ export function getEgoNetwork(pages: Page[], links: Link[], focusUrl: string, ho
     for (const link of links) {
       if (!link.isExternal || !pageMap.has(link.fromUrl) || pageMap.get(link.fromUrl)?.isExternal || pageMap.has(link.toUrl)) continue;
       pageMap.set(link.toUrl, {
-        url: link.toUrl, path: link.toUrl, title: link.toUrl, statusCode: null,
+        url: link.toUrl, path: link.toUrl, title: link.toUrl,
+        // Only a confirmed-gone destination carries a status; every other check stays unverified.
+        statusCode: link.externalCheck === 'broken' ? link.externalStatusCode ?? null : null,
         pageClass: 'external', depth: null, indexable: false, inboundCount: 0, outboundCount: 0, isExternal: true,
       });
     }
@@ -95,17 +97,17 @@ export function filterExternalDestinations(network: Network, search: string) {
   };
 }
 
-const isBrokenNode = (node: EgoNode) => !node.page.isExternal && (node.page.statusCode ?? 0) >= 400;
+const isBrokenNode = (node: EgoNode) => (node.page.statusCode ?? 0) >= 400;
+const brokenFirst = (nodes: EgoNode[]) => [...nodes.filter(isBrokenNode), ...nodes.filter(node => !isBrokenNode(node))];
 
 /**
  * Separate per-kind budgets keep external evidence from replacing internal context. Within
- * the internal budget, pages that answer HTTP 4xx/5xx come first: a broken destination is
- * the node the reader most needs to see, and must not sit behind a "show more" button.
+ * each budget, broken destinations (internal 4xx/5xx, external 404/410) come first: they are
+ * the nodes the reader most needs to see, and must not sit behind a "show more" button.
  */
 export function limitEgoNodes(nodes: EgoNode[], limit: number) {
-  const internal = nodes.filter(node => !node.page.isExternal);
   return balanceExternalNodes([
-    ...[...internal.filter(isBrokenNode), ...internal.filter(node => !isBrokenNode(node))].slice(0, limit),
-    ...nodes.filter(node => node.page.isExternal).slice(0, limit),
+    ...brokenFirst(nodes.filter(node => !node.page.isExternal)).slice(0, limit),
+    ...brokenFirst(nodes.filter(node => node.page.isExternal)).slice(0, limit),
   ]);
 }

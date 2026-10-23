@@ -158,7 +158,9 @@ export function EgoNetwork() {
   const positions = new Map(displayedNodes.map(node => [node.page.url, { x: node.x, y: node.y }]));
   if (focus) positions.set(focus.url, { x: sceneSize / 2, y: sceneSize / 2 });
   const groups = new Map<string, { from: string; to: string; forward: boolean; backward: boolean; forwardBroken: boolean; backwardBroken: boolean }>();
-  const failures = new Set(brokenLinks.map(link => `${link.fromUrl}|${link.toUrl}`));
+  const brokenExternalRows = network.links.filter(link => link.isExternal && link.externalCheck === 'broken')
+    .map(link => ({ fromUrl: link.fromUrl, toUrl: link.toUrl, statusCode: link.externalStatusCode ?? 404, anchor: link.anchor }));
+  const failures = new Set([...brokenLinks, ...brokenExternalRows].map(link => `${link.fromUrl}|${link.toUrl}`));
   network.links.forEach(edge => {
     if (!positions.has(edge.fromUrl) || !positions.has(edge.toUrl)) return;
     const fromDepth = network.distances.get(edge.fromUrl)!, toDepth = network.distances.get(edge.toUrl)!;
@@ -554,7 +556,7 @@ export function EgoNetwork() {
     {showExternal && source === 'database' && site.crawlId && externalQuery.isPending && <p className="external-network-status" role="status">Loading recorded external links… Internal links remain available.</p>}
     {showExternal && externalQuery.isError && <p className="external-network-status" role="alert">External links could not be loaded. No external nodes have been substituted. <button type="button" className="network-action" onClick={() => void externalQuery.refetch()}>Retry external links</button></p>}
     <p className="network-legend">Arrowheads show source → destination. {hops === 2 && 'Inner ring: 1 hop · outer ring: 2 hops. ' }<span className="broken-key">Red marks a verified broken destination.</span></p>
-    {showExternal && <p className="network-legend external-network-legend">Dashed nodes are external destinations recorded in this capture. HTTP status is unverified; no external pages are crawled. They are terminal nodes, not connections between captured pages.{direction === 'incoming' && ' Incoming-only shows no external destinations because this capture records outbound external links, not inbound links from other sites.'}</p>}
+    {showExternal && <p className="network-legend external-network-legend">Dashed nodes are external destinations recorded in this capture. HTTP status is unverified unless the shared link check confirmed the destination gone (HTTP 404 or 410), which is drawn in red; third-party 403s and timeouts stay neutral. No external pages are crawled. They are terminal nodes, not connections between captured pages.{direction === 'incoming' && ' Incoming-only shows no external destinations because this capture records outbound external links, not inbound links from other sites.'}</p>}
     {focus ? <>
       <div className="graph-expansion" aria-label="Diagram page display controls">
         <p className="explorer-note" role="status">
@@ -611,7 +613,7 @@ export function EgoNetwork() {
               {node.page.isExternal ? <ExternalDestinationLink url={node.page.url} className="graph-node-path" /> : <Link className="graph-node-path" draggable={false} href={hrefForPage(node.page.path)} aria-label={`${pageLabel(node.page.path)}, ${node.hop} hop${node.hop === 2 ? 's' : ''}${hasHttpFailure(node.page.statusCode) ? `, HTTP ${node.page.statusCode}` : ''}`}>{pageLabel(node.page.path)}</Link>}
               <span className={`node-direction ${node.incoming && node.outgoing ? 'both' : node.outgoing ? 'outgoing' : 'incoming'}`}>{node.incoming && node.outgoing ? '↔ Both ways' : node.outgoing ? '→ Outgoing' : '← Incoming'}</span>
               <span className="node-hop">{node.hop} {node.hop === 1 ? 'hop' : 'hops'}{hasHttpFailure(node.page.statusCode) ? ` · HTTP ${node.page.statusCode}` : ''}</span>
-              {node.page.isExternal && <span className="external-node-label">External · unverified</span>}
+              {node.page.isExternal && <span className="external-node-label">{hasHttpFailure(node.page.statusCode) ? 'External · broken per link check' : 'External · unverified'}</span>}
               {renderDragHandle(node.page.url, pageLabel(node.page.path))}
             </div>)}
             <div className={`graph-node root ${highlightUrl === focus.url ? 'locate-highlight' : ''} ${hasHttpFailure(focus.statusCode) ? 'broken-node' : ''}`} data-graph-focus-node data-graph-node-id={focus.url} data-moving={draggingNodeId === focus.url} role="group" aria-label={`${pageLabel(focus.path)}, focus page node`} style={{ left: `${sceneSize / 2}px`, top: `${sceneSize / 2}px`, transform: 'translate(-50%,-50%)' }}>{pageLabel(focus.path)}<span className="node-hop">Focus{hasHttpFailure(focus.statusCode) ? ` · HTTP ${focus.statusCode}` : ''}</span>{renderDragHandle(focus.url, `${pageLabel(focus.path)} focus node`)}</div>
@@ -629,13 +631,14 @@ export function EgoNetwork() {
               if (positions.has(node.page.url)) setLocateUrl(node.page.url);
               else confirmExpansion(network.nodes.length, action);
             }}
-            heading={node => <div className="connection-node-heading">{node.page.isExternal ? <ExternalDestinationLink url={node.page.url} className="site-link" /> : <Link href={hrefForPage(node.page.path)} className="site-link">{pageLabel(node.page.path)}</Link>}<span className={`hop-badge hop-${node.hop}`}>{node.hop} {node.hop === 1 ? 'hop' : 'hops'}</span>{node.page.isExternal && <span className="external-node-label">External · HTTP unverified</span>}{hasHttpFailure(node.page.statusCode) && <span className="http-error">HTTP {node.page.statusCode}</span>}</div>}
+            heading={node => <div className="connection-node-heading">{node.page.isExternal ? <ExternalDestinationLink url={node.page.url} className="site-link" /> : <Link href={hrefForPage(node.page.path)} className="site-link">{pageLabel(node.page.path)}</Link>}<span className={`hop-badge hop-${node.hop}`}>{node.hop} {node.hop === 1 ? 'hop' : 'hops'}</span>{node.page.isExternal && <span className="external-node-label">{hasHttpFailure(node.page.statusCode) ? 'External · broken per link check' : 'External · HTTP unverified'}</span>}{hasHttpFailure(node.page.statusCode) && <span className="http-error">HTTP {node.page.statusCode}</span>}</div>}
             evidence={edge => <div className={`link-meta ${failures.has(`${edge.fromUrl}|${edge.toUrl}`) ? 'broken-link-meta' : ''}`}>{edge.anchor || 'No anchor text'} · {edge.container}{(edge.count ?? 1) > 1 ? ` · ${edge.count} matching rows` : ''}<br />{renderEvidenceLink(edge.fromUrl)} → {renderEvidenceLink(edge.toUrl, edge.isExternal)}{failures.has(`${edge.fromUrl}|${edge.toUrl}`) && <span className="http-error"> Broken target</span>}</div>}
           />
           {!network.nodes.length && <p className="explorer-note">No {direction === 'all' ? 'direct' : direction} links for this page.</p>}
         </aside>
       </div>
       <BrokenLinks rows={visibleBroken} network hrefForPage={hrefForPage} />
+      {showExternal && <BrokenLinks rows={brokenExternalRows} network external hrefForPage={hrefForPage} />}
     </> : <div className="panel panel-pad"><h3>No focus page available</h3><p className="explorer-note">Choose a captured page to explore its network.</p></div>}
   </>;
 }

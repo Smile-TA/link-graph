@@ -46,6 +46,9 @@ export interface Link {
   container: string;
   isBoilerplate: boolean | null;
   count?: number;
+  /** External links only: what the link check concluded about the destination. */
+  externalCheck?: 'broken' | 'unverified' | 'ok' | null;
+  externalStatusCode?: number | null;
 }
 
 export const sites: Site[] = [{

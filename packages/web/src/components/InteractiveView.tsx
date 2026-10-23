@@ -110,9 +110,10 @@ function LoadedView({ site, view, snapshot, links }: { site: SiteMetadata; view:
     source: 'database',
     description: snapshot.description,
     brokenLinks: snapshot.brokenLinks,
+    brokenExternalLinks: snapshot.brokenExternalLinks,
   }), [site, snapshot, links]);
   const content = view === 'findings'
-    ? <><BrokenLinks rows={fixture.brokenLinks} /><div className="findings-grid findings-jump-target" id="orphan-pages"><OrphanReviews key={site.siteId} /><aside><div className="panel side-card"><p className="eyebrow">How to read this</p><h3>Find a way in</h3><p>An orphan page has no incoming internal links in the captured site graph. Review whether it should be discoverable from a relevant page.</p></div><div className="panel side-card"><p className="eyebrow">Scope note</p><h3>Recorded link evidence</h3><p>Unresolved internal targets are unverified, not broken. Only captured HTTP failures are listed as broken links. No new link checks are performed.</p></div></aside></div></>
+    ? <><BrokenLinks rows={fixture.brokenLinks} /><BrokenLinks rows={fixture.brokenExternalLinks ?? []} external /><div className="findings-grid findings-jump-target" id="orphan-pages"><OrphanReviews key={site.siteId} /><aside><div className="panel side-card"><p className="eyebrow">How to read this</p><h3>Find a way in</h3><p>An orphan page has no incoming internal links in the captured site graph. Review whether it should be discoverable from a relevant page.</p></div><div className="panel side-card"><p className="eyebrow">Scope note</p><h3>Recorded link evidence</h3><p>Unresolved internal targets are unverified, not broken. Only captured HTTP failures are listed as broken links. No new link checks are performed.</p></div></aside></div></>
     : view === 'pages' ? <PageExplorer key={site.siteId} />
     : view === 'ego' ? <EgoNetwork />
     : view === 'treemap' ? <Treemap />

@@ -299,6 +299,14 @@ What differs from the pack, and why — everything else is the pack's:
   `crawl_metrics.broken` all read that one predicate; a target the crawl never fetched is
   *unresolved* and never counted as broken. "Latest capture" is the latest *complete*
   production crawl, as everywhere else.
+- **Broken external links are a separate list.** The shared link check (`external_urls`)
+  confirms an external destination gone only on a 404/410 (`BROKEN_EXTERNAL_URL`,
+  `repo/graph.ts`, mirroring `RESOURCE_IS_ABSENT` in `packages/linkcheck`); a third party's
+  403/429/timeout is *unverified* and stays neutral. The external-links API carries
+  `externalCheck`/`externalStatusCode` per link; the snapshot has `brokenExternalLinks`
+  (read fresh, outside the capture cache, because the link check keeps rewriting
+  `external_urls` after a crawl completes). The Findings tab shows a second table, the page
+  network draws confirmed-gone destinations red and dashed. The two counts are never summed.
 - **Three columns kept from before:** crawls, next crawl and status in the sites table.
 - **No page titles:** the schema has none, so paths are shown (the pack says so too).
 - Left out of the pack: its framework-comparison page and links, its Playwright, memory-soak
