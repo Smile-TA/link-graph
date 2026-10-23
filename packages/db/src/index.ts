@@ -109,6 +109,7 @@ export {
   listGraphBrokenExternalLinks,
   BROKEN_EXTERNAL_URL,
   countLinksPerCrawl,
+  countBrokenExternalLinksPerCrawl,
 } from "./repo/graph.js";
 export type {
   GraphPage,

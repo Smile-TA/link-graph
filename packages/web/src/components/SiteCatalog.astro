@@ -7,6 +7,7 @@ const totalPages = sites.reduce((sum, site) => sum + site.pageCount, 0);
 const knownOrphans = sites.reduce((sum, site) => sum + (site.orphanCount ?? 0), 0);
 const unresolved = sites.reduce((sum, site) => sum + site.unresolvedInternalLinks, 0);
 const broken = sites.reduce((sum, site) => sum + site.brokenLinks, 0);
+const brokenExternal = sites.reduce((sum, site) => sum + site.brokenExternalLinks, 0);
 const unknownOrphanSites = sites.filter(site => site.orphanCount === null).length;
 const formatDate = (value?: string | null) => {
   if (!value) return 'Not captured';
@@ -14,7 +15,7 @@ const formatDate = (value?: string | null) => {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 };
 const columns = [
-  ['host', 'Site'], ['pageCount', 'Pages'], ['orphanCount', 'Orphans'], ['brokenLinks', 'Broken links'], ['unresolvedInternalLinks', 'Unresolved links'], ['latestCrawlAt', 'Latest capture'],
+  ['host', 'Site'], ['pageCount', 'Pages'], ['orphanCount', 'Orphans'], ['brokenLinks', 'Broken links'], ['brokenExternalLinks', 'Broken external'], ['unresolvedInternalLinks', 'Unresolved links'], ['latestCrawlAt', 'Latest capture'],
   // Added to the pack's table: the crawl history and schedule this app's sites list has always shown.
   ['crawlCount', 'Crawls'], ['nextCrawl', 'Next crawl'], ['status', 'Status'],
 ];
@@ -36,10 +37,10 @@ const columns = [
     <div style="overflow-x:auto" class="static-table-fallback">
       <table class="site-table" data-site-table>
         <thead><tr>{columns.map(([key, label]) => <th aria-sort={key === 'host' ? 'ascending' : 'none'}><button class="site-sort" type="button" data-sort={key} data-testid={`sort-sites-${key}`}>{label}<span aria-hidden="true">↕</span></button></th>)}</tr></thead>
-        <tbody>{sites.map(site => <tr data-site-row data-host={site.host} data-page-count={site.pageCount} data-orphan-count={site.orphanCount ?? ''} data-broken-links={site.brokenLinks} data-unresolved-internal-links={site.unresolvedInternalLinks} data-latest-crawl-at={site.latestCrawlAt ?? ''} data-crawl-count={site.crawlCount} data-next-crawl={site.nextCrawl ?? ''} data-status={site.status} data-search={`${site.host} ${site.siteId} ${site.sampleLabel}`} data-testid={`row-site-${site.siteId}`}>
+        <tbody>{sites.map(site => <tr data-site-row data-host={site.host} data-page-count={site.pageCount} data-orphan-count={site.orphanCount ?? ''} data-broken-links={site.brokenLinks} data-broken-external-links={site.brokenExternalLinks} data-unresolved-internal-links={site.unresolvedInternalLinks} data-latest-crawl-at={site.latestCrawlAt ?? ''} data-crawl-count={site.crawlCount} data-next-crawl={site.nextCrawl ?? ''} data-status={site.status} data-search={`${site.host} ${site.siteId} ${site.sampleLabel}`} data-testid={`row-site-${site.siteId}`}>
           <td><div class="host-cell"><span class="host-glyph" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18"/></svg></span><div><a href={`${base}/sites/${site.siteId}`} class="site-link" data-testid={`link-site-${site.siteId}`}>{site.host}</a><div style="color:#666;font-size:10px;margin-top:3px">{site.sampleLabel}{site.enabled === false ? ' · Disabled in registry' : ''}</div></div></div></td>
           <td class="mono">{site.pageCount}</td><td class="mono" title={site.orphanUnknownReason ?? undefined}>{site.orphanCount ?? 'Unknown'}</td>
-          <td class="mono" data-testid={`site-broken-links-${site.siteId}`} title="Verified internal HTTP failures">{site.brokenLinks}</td><td class="mono">{site.unresolvedInternalLinks}</td>
+          <td class="mono" data-testid={`site-broken-links-${site.siteId}`} title="Verified internal HTTP failures">{site.brokenLinks}</td><td class="mono" data-testid={`site-broken-external-links-${site.siteId}`} title="External links the shared link check confirmed gone (HTTP 404/410)">{site.brokenExternalLinks}</td><td class="mono">{site.unresolvedInternalLinks}</td>
           <td style="font-size:10px;white-space:nowrap">{site.latestCrawlAt ? formatDate(site.latestCrawlAt) : 'Not captured'}</td>
           <td class="mono">{site.crawlCount}</td>
           <td style="font-size:10px;white-space:nowrap">{site.nextCrawl ? formatDate(site.nextCrawl) : site.enabled ? '—' : 'Disabled'}</td>
@@ -57,6 +58,7 @@ const columns = [
       <div class="stat"><div class="stat-label">Known orphan pages</div><div class="stat-value">{knownOrphans.toLocaleString()}</div>{unknownOrphanSites > 0 && <div class="stat-sub">{unknownOrphanSites} sites have unknown orphan totals</div>}</div>
       <div class="stat"><div class="stat-label">Unresolved internal links</div><div class="stat-value">{unresolved.toLocaleString()}</div></div>
       <div class="stat"><div class="stat-label">Verified broken links</div><div class="stat-value">{broken.toLocaleString()}</div></div>
+      <div class="stat"><div class="stat-label">Broken external links</div><div class="stat-value">{brokenExternal.toLocaleString()}</div><div class="stat-sub">Confirmed 404/410 by the link check</div></div>
     </div>
     <div class="overview-kicker"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11z"/><path d="m9 12 2 2 4-4"/></svg> Imported latest captures · no live crawl</div>
   </section>

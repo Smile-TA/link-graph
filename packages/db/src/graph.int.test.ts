@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "./migrate.js";
 import { listLatestCrawlsPerSite } from "./repo/crawls.js";
 import {
+  countBrokenExternalLinksPerCrawl,
   countLinksPerCrawl,
   listGraphBrokenEdges,
   listGraphBrokenExternalLinks,
@@ -257,6 +258,13 @@ describe("external link checks", () => {
         anchor: "dead-ext",
       },
     ]);
+  });
+
+  it("counts confirmed-broken external link rows per crawl", async () => {
+    expect(
+      (await countBrokenExternalLinksPerCrawl(db.pool, [crawlId])).get(crawlId),
+    ).toBe(1);
+    expect((await countBrokenExternalLinksPerCrawl(db.pool, [])).size).toBe(0);
   });
 
   it("does not move the internal broken definition", async () => {

@@ -284,6 +284,26 @@ export async function listGraphBrokenEdges(
  * Link-row totals for a set of crawls, one query. A complete crawl's rows never change,
  * so callers cache the answer per crawl id; crawls with no rows are absent.
  */
+/**
+ * Link rows to a confirmed-gone external destination (`BROKEN_EXTERNAL_URL`) per crawl —
+ * the count behind `listGraphBrokenExternalLinks`. Not part of any crawl's stored rollup:
+ * the link check rewrites `external_urls` after a crawl completes, so this moves on its own.
+ */
+export async function countBrokenExternalLinksPerCrawl(
+  db: Queryable,
+  crawlIds: readonly number[],
+): Promise<Map<number, number>> {
+  if (crawlIds.length === 0) return new Map();
+  const { rows } = await db.query<{ crawlId: string; n: number }>(
+    `SELECT l.crawl_id::text AS "crawlId", count(*)::int AS n
+     FROM links l JOIN external_urls x ON x.url_normalized = l.to_url_normalized
+     WHERE l.crawl_id = ANY($1::bigint[]) AND l.is_external AND ${BROKEN_EXTERNAL_URL}
+     GROUP BY l.crawl_id`,
+    [crawlIds],
+  );
+  return new Map(rows.map((row) => [Number(row.crawlId), row.n]));
+}
+
 export async function countLinksPerCrawl(
   db: Queryable,
   crawlIds: readonly number[],

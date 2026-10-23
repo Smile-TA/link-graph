@@ -12,6 +12,7 @@
  */
 import { createHash } from "node:crypto";
 import {
+  countBrokenExternalLinksPerCrawl,
   countLinksPerCrawl,
   listCrawlSummaries,
   listGraphBrokenEdges,
@@ -36,10 +37,30 @@ export type GraphSite = ApiGraphSite & {
   /** ISO time of the next scheduled crawl, `null` when none (or Redis is unreachable). */
   nextCrawl: string | null;
   status: "enabled" | "disabled" | "alias";
+  /** Link rows to external destinations the link check confirmed gone; counted apart from `brokenLinks`. */
+  brokenExternalLinks: number;
 };
 
 // A complete crawl's rows never change, so its link total is counted once per process.
 const linkTotals = new Map<number, number>();
+
+// The link check moves this on its own schedule, and the catalog is read on every request
+// (every API call validates its crawl against it), so it is counted at most once a minute.
+const BROKEN_EXTERNAL_TTL_MS = 60_000;
+let brokenExternal: { at: number; ids: string; counts: Map<number, number> } | undefined;
+
+async function brokenExternalCounts(crawlIds: number[]): Promise<Map<number, number>> {
+  const ids = crawlIds.join(",");
+  if (
+    brokenExternal !== undefined &&
+    brokenExternal.ids === ids &&
+    Date.now() - brokenExternal.at < BROKEN_EXTERNAL_TTL_MS
+  )
+    return brokenExternal.counts;
+  const counts = await countBrokenExternalLinksPerCrawl(pool, crawlIds);
+  brokenExternal = { at: Date.now(), ids, counts };
+  return counts;
+}
 
 export async function getCatalog(): Promise<GraphSite[]> {
   const [sites, summaries, latest, metrics, nextRuns] = await Promise.all([
@@ -58,6 +79,9 @@ export async function getCatalog(): Promise<GraphSite[]> {
   const missing = latest.map((row) => row.crawlId).filter((id) => !linkTotals.has(id));
   for (const [crawlId, total] of await countLinksPerCrawl(pool, missing))
     linkTotals.set(crawlId, total);
+  const brokenExternalByCrawl = await brokenExternalCounts(
+    latest.map((row) => row.crawlId),
+  );
 
   return sites
     .map((site): GraphSite => {
@@ -104,7 +128,13 @@ export async function getCatalog(): Promise<GraphSite[]> {
       const captureVersion = createHash("sha256")
         .update(JSON.stringify({ ...row, nextCrawl: null }))
         .digest("hex");
-      return { ...row, captureVersion };
+      return {
+        ...row,
+        // Outside the identity hash: it moves with the link check, not with the capture.
+        brokenExternalLinks:
+          crawl === undefined ? 0 : (brokenExternalByCrawl.get(crawl.crawlId) ?? 0),
+        captureVersion,
+      };
     })
     .sort(
       (a, b) =>
