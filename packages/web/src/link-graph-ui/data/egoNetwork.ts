@@ -95,10 +95,17 @@ export function filterExternalDestinations(network: Network, search: string) {
   };
 }
 
-/** Separate per-kind budgets keep external evidence from replacing internal context. */
+const isBrokenNode = (node: EgoNode) => !node.page.isExternal && (node.page.statusCode ?? 0) >= 400;
+
+/**
+ * Separate per-kind budgets keep external evidence from replacing internal context. Within
+ * the internal budget, pages that answer HTTP 4xx/5xx come first: a broken destination is
+ * the node the reader most needs to see, and must not sit behind a "show more" button.
+ */
 export function limitEgoNodes(nodes: EgoNode[], limit: number) {
+  const internal = nodes.filter(node => !node.page.isExternal);
   return balanceExternalNodes([
-    ...nodes.filter(node => !node.page.isExternal).slice(0, limit),
+    ...[...internal.filter(isBrokenNode), ...internal.filter(node => !isBrokenNode(node))].slice(0, limit),
     ...nodes.filter(node => node.page.isExternal).slice(0, limit),
   ]);
 }

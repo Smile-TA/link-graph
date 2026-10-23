@@ -34,6 +34,12 @@ describe('Captured graph evidence', () => {
     expect(limitEgoNodes(result.nodes, 2).filter(node => !node.page.isExternal)).toHaveLength(2);
     expect(filterExternalDestinations(result, 'absent.test').externalCounts.matchingDestinations).toBe(0);
   });
+  it('draws broken destinations first when the node budget is smaller than the neighbourhood', () => {
+    const node = (path: string, statusCode: number) => ({ hop: 1, parentUrl: root, page: { ...pages[0], url: `https://x.test${path}`, path, statusCode, isExternal: false } });
+    const nodes = [node('/a/', 200), node('/b/', 200), node('/c/', 200), node('/z-gone/', 404)];
+    expect(limitEgoNodes(nodes, 2).map(n => n.page.path)).toEqual(['/z-gone/', '/a/']);
+    expect(limitEgoNodes(nodes, 8).map(n => n.page.path)).toEqual(['/z-gone/', '/a/', '/b/', '/c/']);
+  });
   it('handles absent focus and empty captures', () => {
     expect(getEgoNetwork([], [], root, 2, 'all').nodes).toEqual([]);
     expect(getEgoNetwork(pages, links, 'https://absent.test/', 1, 'all').links).toEqual([]);

@@ -57,6 +57,7 @@ export function EgoNetwork() {
    const [pendingExpansion, setPendingExpansion] = useState<(() => void) | null>(null);
    const [viewport, setViewport] = useState({ left: 0, top: 0, width: 1000, height: 600 });
    const [locateUrl, setLocateUrl] = useState<string | null>(null);
+  const [highlightUrl, setHighlightUrl] = useState<string | null>(null);
   const graphScrollRef = useRef<HTMLDivElement>(null);
   const graphSceneRef = useRef<HTMLDivElement>(null);
   const layoutPositionsRef = useRef(new Map<string, { x: number; y: number }>());
@@ -210,9 +211,15 @@ export function EgoNetwork() {
      if (point && scroll) {
        scroll.scrollLeft = point.x * zoom - scroll.clientWidth / 2;
        scroll.scrollTop = point.y * zoom - scroll.clientHeight / 2;
+       setHighlightUrl(locateUrl);
        setLocateUrl(null);
      }
    }, [locateUrl, sceneSize, displayedNodesCount, zoom]);
+  useEffect(() => {
+    if (!highlightUrl) return;
+    const timer = setTimeout(() => setHighlightUrl(null), 3500);
+    return () => clearTimeout(timer);
+  }, [highlightUrl]);
   const visibleNodeKey = displayedNodes.map(node => node.page.url).join('|');
   const visibleEdgeKey = [...groups.keys()].join('|');
   const updateGraphPositions = () => {
@@ -600,14 +607,14 @@ export function EgoNetwork() {
                 return <line key={key} data-graph-edge-index={index} data-graph-from={group.from} data-graph-to={group.to} {...getGraphEdgeEndpoints({ ...from, width: 150, height: 112 }, { ...to, width: 150, height: 112 })} className={`graph-edge ${group.forwardBroken || group.backwardBroken ? 'broken-edge' : ''}`} markerStart={group.backward ? `url(#edge-${group.backwardBroken ? 'broken' : 'in'}-arrow)` : undefined} markerEnd={group.forward ? `url(#edge-${group.forwardBroken ? 'broken' : 'out'}-arrow)` : undefined} />;
               })}
             </svg>
-            {renderedNodes.map(node => <div key={node.page.url} data-graph-node-id={node.page.url} data-external={node.page.isExternal || undefined} data-moving={draggingNodeId === node.page.url} className={`graph-node ${node.page.isExternal ? 'external-node' : ''} ${node.hop === 2 ? 'second-hop-node' : ''} ${hasHttpFailure(node.page.statusCode) ? 'broken-node' : ''}`} style={{ left: `${(windowed ? pinnedPositionsRef.current.get(node.page.url)?.x : undefined) ?? node.x}px`, top: `${(windowed ? pinnedPositionsRef.current.get(node.page.url)?.y : undefined) ?? node.y}px`, transform: 'translate(-50%,-50%)' }} title={`${node.page.url} · ${node.hop} hop${node.hop === 2 ? 's' : ''}`}>
+            {renderedNodes.map(node => <div key={node.page.url} data-graph-node-id={node.page.url} data-external={node.page.isExternal || undefined} data-moving={draggingNodeId === node.page.url} className={`graph-node ${highlightUrl === node.page.url ? 'locate-highlight' : ''} ${node.page.isExternal ? 'external-node' : ''} ${node.hop === 2 ? 'second-hop-node' : ''} ${hasHttpFailure(node.page.statusCode) ? 'broken-node' : ''}`} style={{ left: `${(windowed ? pinnedPositionsRef.current.get(node.page.url)?.x : undefined) ?? node.x}px`, top: `${(windowed ? pinnedPositionsRef.current.get(node.page.url)?.y : undefined) ?? node.y}px`, transform: 'translate(-50%,-50%)' }} title={`${node.page.url} · ${node.hop} hop${node.hop === 2 ? 's' : ''}`}>
               {node.page.isExternal ? <ExternalDestinationLink url={node.page.url} className="graph-node-path" /> : <Link className="graph-node-path" draggable={false} href={hrefForPage(node.page.path)} aria-label={`${pageLabel(node.page.path)}, ${node.hop} hop${node.hop === 2 ? 's' : ''}${hasHttpFailure(node.page.statusCode) ? `, HTTP ${node.page.statusCode}` : ''}`}>{pageLabel(node.page.path)}</Link>}
               <span className={`node-direction ${node.incoming && node.outgoing ? 'both' : node.outgoing ? 'outgoing' : 'incoming'}`}>{node.incoming && node.outgoing ? '↔ Both ways' : node.outgoing ? '→ Outgoing' : '← Incoming'}</span>
               <span className="node-hop">{node.hop} {node.hop === 1 ? 'hop' : 'hops'}{hasHttpFailure(node.page.statusCode) ? ` · HTTP ${node.page.statusCode}` : ''}</span>
               {node.page.isExternal && <span className="external-node-label">External · unverified</span>}
               {renderDragHandle(node.page.url, pageLabel(node.page.path))}
             </div>)}
-            <div className={`graph-node root ${hasHttpFailure(focus.statusCode) ? 'broken-node' : ''}`} data-graph-focus-node data-graph-node-id={focus.url} data-moving={draggingNodeId === focus.url} role="group" aria-label={`${pageLabel(focus.path)}, focus page node`} style={{ left: `${sceneSize / 2}px`, top: `${sceneSize / 2}px`, transform: 'translate(-50%,-50%)' }}>{pageLabel(focus.path)}<span className="node-hop">Focus{hasHttpFailure(focus.statusCode) ? ` · HTTP ${focus.statusCode}` : ''}</span>{renderDragHandle(focus.url, `${pageLabel(focus.path)} focus node`)}</div>
+            <div className={`graph-node root ${highlightUrl === focus.url ? 'locate-highlight' : ''} ${hasHttpFailure(focus.statusCode) ? 'broken-node' : ''}`} data-graph-focus-node data-graph-node-id={focus.url} data-moving={draggingNodeId === focus.url} role="group" aria-label={`${pageLabel(focus.path)}, focus page node`} style={{ left: `${sceneSize / 2}px`, top: `${sceneSize / 2}px`, transform: 'translate(-50%,-50%)' }}>{pageLabel(focus.path)}<span className="node-hop">Focus{hasHttpFailure(focus.statusCode) ? ` · HTTP ${focus.statusCode}` : ''}</span>{renderDragHandle(focus.url, `${pageLabel(focus.path)} focus node`)}</div>
           </div>
           </div></div>
           <p id="graph-move-help" className="graph-move-help">Click a captured page name to refocus. External destinations open in a new tab. Drag a Move handle to rearrange a node. Keyboard: focus Move, press Space, use arrow keys, then Space to drop.</p>
