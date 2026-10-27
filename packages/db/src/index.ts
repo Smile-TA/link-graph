@@ -50,6 +50,7 @@ export {
   insertCrawl,
   findCrawl,
   findLatestCompleteCrawl,
+  listLatestCrawlsPerSite,
   finishCrawl,
   reopenCrawl,
   countCrawlRows,
@@ -68,6 +69,7 @@ export type {
   CrawlRowCounts,
   CrawlStatus,
   CrawlSummary,
+  LatestCrawl,
 } from "./repo/crawls.js";
 export {
   addToFrontier,
@@ -81,6 +83,8 @@ export {
   insertPages,
   listPages,
   listPagesPage,
+  searchPagesByPath,
+  searchPagesPage,
   findPageByUrl,
   PAGE_CLASSES,
   PAGE_COLUMNS,
@@ -97,6 +101,24 @@ export {
   listExternalLinksForCrawl,
 } from "./repo/external-urls.js";
 export type { ExternalUrlInput, ExternalLinkRow } from "./repo/external-urls.js";
+export {
+  listGraphPages,
+  listGraphConnections,
+  listGraphExternalLinks,
+  listGraphBrokenEdges,
+  listGraphBrokenExternalLinks,
+  BROKEN_EXTERNAL_URL,
+  countLinksPerCrawl,
+  countBrokenExternalLinksPerCrawl,
+} from "./repo/graph.js";
+export type {
+  GraphPage,
+  GraphEdge,
+  GraphScope,
+  GraphExternalLink,
+  GraphBrokenEdge,
+  ExternalCheck,
+} from "./repo/graph.js";
 export {
   upsertCrawlMetrics,
   findCrawlMetrics,

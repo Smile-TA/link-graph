@@ -116,6 +116,12 @@ export interface SiteCrawlMetrics {
   readonly orphans: number | null;
   readonly orphansUnknownReason: OrphansUnknownReason | null;
   readonly broken: number;
+  /** Internal edges whose target was never fetched: unknown, never broken. */
+  readonly internalUnresolved: number;
+  /** Distinct external target URLs. */
+  readonly external: number;
+  /** Pages in that crawl. */
+  readonly pageCount: number;
 }
 
 /**
@@ -132,7 +138,9 @@ export async function listLatestCrawlMetricsPerSite(
 ): Promise<SiteCrawlMetrics[]> {
   const { rows } = await db.query<SiteCrawlMetrics>(
     `SELECT DISTINCT ON (c.site_id) c.site_id AS "siteId", cm.orphans,
-       cm.orphans_unknown_reason AS "orphansUnknownReason", cm.broken
+       cm.orphans_unknown_reason AS "orphansUnknownReason", cm.broken,
+       cm.internal_unresolved AS "internalUnresolved", cm.external,
+       (SELECT count(*)::int FROM pages p WHERE p.crawl_id = c.id) AS "pageCount"
      FROM crawls c
      JOIN crawl_metrics cm ON cm.crawl_id = c.id
      WHERE c.status = 'complete' AND c.env = 'prod'

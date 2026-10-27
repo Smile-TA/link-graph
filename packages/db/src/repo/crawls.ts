@@ -305,3 +305,25 @@ export async function countCrawlRows(
   }
   return counts;
 }
+
+export interface LatestCrawl {
+  readonly siteId: number;
+  readonly crawlId: number;
+  readonly startedAt: Date;
+  readonly finishedAt: Date | null;
+}
+
+/**
+ * Each site's latest complete production crawl in one query — `findLatestCompleteCrawl`'s
+ * predicate and ordering applied across every site, for the dashboard's catalog (the
+ * per-site loop would be a round trip per site). A site with no complete crawl has no row.
+ */
+export async function listLatestCrawlsPerSite(db: Queryable): Promise<LatestCrawl[]> {
+  const { rows } = await db.query<LatestCrawl>(
+    `SELECT DISTINCT ON (site_id) site_id AS "siteId", id AS "crawlId",
+            started_at AS "startedAt", finished_at AS "finishedAt"
+     FROM crawls WHERE status = 'complete' AND env = 'prod'
+     ORDER BY site_id, finished_at DESC NULLS LAST, id DESC`,
+  );
+  return rows;
+}

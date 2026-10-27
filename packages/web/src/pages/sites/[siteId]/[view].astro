@@ -1,0 +1,43 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import Notice from '../../../components/Notice.astro';
+import SiteTabs from '../../../components/SiteTabs.astro';
+import StaticViews from '../../../components/StaticViews.astro';
+import InteractiveView from '../../../components/InteractiveView';
+import { getCatalog, getSnapshot } from '../../../server/captures';
+import type { GraphSite } from '../../../server/captures';
+
+const views = ['pages', 'ego', 'treemap', 'distributions', 'section-matrix'] as const;
+type View = (typeof views)[number];
+// Server-rendered per request (the pack prerendered every site/view pair at build time).
+const view = views.find((candidate): candidate is View => candidate === Astro.params.view);
+const site = (await getCatalog()).find((row: GraphSite) => row.siteId === Astro.params.siteId);
+if (!site || !view) return new Response('Unknown site or view', { status: 404, headers: { 'content-type': 'text/plain' } });
+const snapshot = await getSnapshot(site.siteId);
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const headings: Record<typeof view, { eyebrow: string; intro: string }> = {
+  pages: { eyebrow: 'All page records', intro: 'Search page records from this capture and open any page’s network.' },
+  ego: { eyebrow: 'Structure', intro: 'Supporting views reveal how captured pages are organized and connected.' },
+  treemap: { eyebrow: 'Structure', intro: 'Supporting views reveal how captured pages are organized and connected.' },
+  distributions: { eyebrow: 'Structure', intro: 'Supporting views reveal how captured pages are organized and connected.' },
+  'section-matrix': { eyebrow: 'Structure', intro: 'Supporting views reveal how captured pages are organized and connected.' },
+};
+const label = headings[view];
+const formatDate = (value?: string | null) => {
+  if (!value) return 'Latest capture';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+};
+const originalHref = `/sites/${site.siteId}/${view}`;
+---
+<BaseLayout title={`${site.host} — ${label.eyebrow}`} site={site} section={view} originalHref={originalHref}>
+  <div class="page-head">
+    <div><p class="eyebrow">Site / {label.eyebrow}</p><h1>{site.host}</h1><p class="page-intro">{label.intro}</p></div>
+    <div class="head-meta">{site.pageCount.toLocaleString()} pages · {formatDate(site.latestCrawlAt)}</div>
+  </div>
+  <Notice site={site} description={snapshot.description} />
+  <SiteTabs siteId={site.siteId} active={view} />
+  {view === 'distributions' ? <StaticViews site={site} snapshot={snapshot} view={view} siteId={site.siteId} /> : <InteractiveView client:load site={site} view={view} dataUrl={`${base}/data/${site.siteId}.json`}>
+    <StaticViews site={site} snapshot={snapshot} view={view} siteId={site.siteId} />
+  </InteractiveView>}
+</BaseLayout>

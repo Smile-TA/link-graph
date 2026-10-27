@@ -1,3 +1,16 @@
 {
-  "extends": "astro/tsconfigs/strict"
+  "extends": "astro/tsconfigs/strict",
+  "include": ["src/**/*", ".astro/types.d.ts"],
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@workspace/link-graph-ui/components/*": ["./src/link-graph-ui/components/*.tsx"],
+      "@workspace/link-graph-ui/data/*": ["./src/link-graph-ui/data/*.ts"],
+      "@workspace/link-graph-ui/hooks/*": ["./src/link-graph-ui/hooks/*.ts"],
+      "@workspace/link-graph-ui/views": ["./src/link-graph-ui/views.tsx"],
+      "@workspace/api-client-react": ["./src/api-client/index.ts"]
+    }
+  }
 }

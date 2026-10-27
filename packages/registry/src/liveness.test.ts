@@ -13,6 +13,17 @@ describe("hasPlatformSignature", () => {
     ).toBe(true);
   });
 
+  it("does not pin the Apache patch version (2.4.66 and 2.4.68 are both the platform)", () => {
+    for (const server of ["Apache/2.4.66 (Ubuntu)", "Apache/2.4.68", "Apache/2.4.7"]) {
+      expect(hasPlatformSignature({ Server: server, "X-Amz-Cf-Id": "abc123" })).toBe(true);
+    }
+  });
+
+  it("false for another Apache line, even behind CloudFront", () => {
+    expect(hasPlatformSignature({ Server: "Apache/2.2.34", "X-Amz-Cf-Id": "abc123" })).toBe(false);
+    expect(hasPlatformSignature({ Server: "Apache/2.40.1", "X-Amz-Cf-Id": "abc123" })).toBe(false);
+  });
+
   it("false with only the Apache header", () => {
     expect(hasPlatformSignature({ Server: "Apache/2.4.68 (Amazon)" })).toBe(false);
   });

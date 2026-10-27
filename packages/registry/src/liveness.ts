@@ -1,6 +1,6 @@
 /**
  * The liveness probe (PRD §3.1): DNS resolves → serves HTTP → carries the platform
- * signature (Apache/2.4.68 + CloudFront headers) → `/version.txt` present.
+ * signature (Apache/2.4.x + CloudFront headers) → `/version.txt` present.
  *
  * DNS and HTTP are both injected (engineering guide §4.3) so unit tests run a fake
  * resolver and fetcher — a registry-health decision must be testable without a live
@@ -42,8 +42,12 @@ export interface LivenessResult {
 }
 
 /**
- * The platform signature PRD §3.1 names: an `Apache/2.4.68`-flavoured `Server` header
- * plus a CloudFront header. Checked as two independent signals rather than one regex
+ * The platform signature PRD §3.1 names: an `Apache/2.4.x`-flavoured `Server` header
+ * plus a CloudFront header. The patch version is deliberately not pinned: it was
+ * `2.4.68` when the signature was written, and the estate reported `2.4.66` on
+ * 2026-10-22 — every one of 153 live, CloudFront-fronted sites then read as "configured
+ * but dead" in the drift report. The platform is the Apache 2.4 line behind CloudFront;
+ * the patch release is not what distinguishes it from a third-party host. Checked as two independent signals rather than one regex
  * over the whole header blob, so a host fronted by CloudFront but not this Apache build
  * (or vice versa) is visibly "half-signed" to anyone reading the two booleans back out
  * of a failing test, rather than a single opaque `false`.
@@ -51,7 +55,7 @@ export interface LivenessResult {
 export function hasPlatformSignature(headers: Readonly<Record<string, string>>): boolean {
   const lower = new Map(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
   const server = lower.get("server") ?? "";
-  const hasApache = /Apache\/2\.4\.68/i.test(server);
+  const hasApache = /Apache\/2\.4\.\d+/i.test(server);
   const hasCloudFront =
     lower.has("x-amz-cf-id") ||
     lower.has("x-amz-cf-pop") ||

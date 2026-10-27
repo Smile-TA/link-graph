@@ -41,3 +41,15 @@ IncompleteLinkcheckError: external link check of crawl 105 is incomplete: not on
 21. bull board is slow to respond now. Why? could it be because too many schedules or crawls? Memory issue on the machine?
 22. Ego network should have a toggle to include external links
 23. Need to fix overflow issue on http://localhost:4321/sites/simkt.com/ and similar.
+24. Need to add "for agents/llms" endpoints or MCP tool
+25. Need to add auth. 
+26. Need to remove "imported database" from top right. 
+27. Page netwrok or ego network, pick one name. 
+28. External pages should have an ego network page as well, so we can easily see all pages pointing at it.
+29. Section matrix is hard to manage on large sites. need separate row and column filters.
+30. Inbound links table is not clear on purpose.
+31. node graph has empty space where nodes cant reach
+32. node graph shoukd be scrolable horizontally
+33. easy way to change cron per site. bull board?
+34. need worker logs visibility during a crawl
+35. need web container log visibility in docker

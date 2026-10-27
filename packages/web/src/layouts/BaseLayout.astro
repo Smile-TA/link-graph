@@ -1,0 +1,44 @@
+---
+import '../styles/index.css';
+
+const { title = 'Link Graph', site, section = '' } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const isSites = !site && section !== 'comparison';
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" type="image/svg+xml" href={`${base}/favicon.svg`} />
+    <title>{title} · Link Graph</title>
+    <meta name="description" content="Evidence-based multi-site crawl review for broken links, orphan pages, and captured page structure." />
+  </head>
+  <body>
+    <div class="app-shell">
+      <div class="main-area">
+        <header class="topbar">
+          <a href={`${base}/sites`} class="brand" aria-label="Link Graph home" data-testid="link-brand-home">
+            <span class="brand-mark" aria-hidden="true">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="3"/><circle cx="19" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M7.5 7.5 10.5 15M16.5 7.5 13.5 15M8 6h8"/></svg>
+            </span>
+            <span><span class="brand-name">Link Graph</span><span class="brand-caption">Link intelligence</span></span>
+          </a>
+          <nav class="global-nav" aria-label="Main navigation">
+            <a href={`${base}/sites`} class={`nav-link ${isSites ? 'active' : ''}`} aria-current={isSites ? 'page' : undefined}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              Sites
+            </a>
+          </nav>
+          <nav class="crumb" aria-label="Breadcrumb">
+            <a href={`${base}/sites`}>Sites</a>
+            {site && <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg><strong class="current-site-crumb" aria-current="page" title={site.host}>{site.host}</strong></>}
+          </nav>
+          <div class="preview-label"><span class="preview-dot"></span> Imported database</div>
+        </header>
+        <main class="content fade-up"><slot /></main>
+      </div>
+    </div>
+  </body>
+</html>

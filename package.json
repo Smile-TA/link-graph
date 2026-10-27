@@ -6,12 +6,12 @@
     "packages/*"
   ],
   "scripts": {
-    "lint": "tsc --noEmit && eslint .",
+    "lint": "tsc --noEmit && npm run check --workspace=@link-graph/web && eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "link-graph": "tsx packages/cli/src/bin.ts",
     "pretest": "npm run lint",
-    "test": "vitest run",
+    "test": "vitest run && npm run test --workspace=@link-graph/web",
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "devDependencies": {

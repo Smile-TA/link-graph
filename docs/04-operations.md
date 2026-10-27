@@ -267,6 +267,59 @@ npm run dev      # http://localhost:4321, live against DATABASE_URL
 npm run build && npm run start   # production build, same as the compose service does
 ```
 
+### The UI, and the one API
+
+The UI is the Link Graph PR pack's, vendored with as few changes as possible:
+`src/link-graph-ui/` (its React components and data modules), `src/components/` and
+`src/layouts/` (its Astro shell and the island that mounts them), `src/api-client/` (its
+generated client) and its Tailwind stylesheet. The pack imports two workspace package names;
+`aliases.mjs` maps them to those folders, so its files keep their imports exactly as written
+and a newer pack drops in by copying over them. The pack's own unit and component tests came
+with it (`packages/web/tests`, `npm test`), and its `.test` fixtures stand in for a database.
+Vendored code is type-checked by `astro check` (part of `npm run lint`) but not linted against
+this repo's rules.
+
+What differs from the pack, and why — everything else is the pack's:
+
+- **No pnpm workspace, no Express server.** The pack's API contract is served by Astro
+  endpoints in this app, backed by `@link-graph/db` (`repo/graph.ts`): `GET
+  /api/link-graph/sites`, `.../sites/:id`, `.../crawls/:crawlId/connections` and
+  `.../external-links`, plus `/data/:id.json` for a site's snapshot. `src/server/captures.ts`
+  keeps the module name the pack's pages import and answers from the database instead of
+  fetching over HTTP at build time. Pages are server-rendered per request, not prerendered.
+- **Reviews are in the database, not the browser.** `use-orphan-reviews.ts` and
+  `orphanReviews.ts` call `/api/link-graph/sites/:id/reviews`, which reads and writes
+  `finding_reviews` — the same rows `link-graph note` writes — so a judgement is shared and
+  survives clearing a browser. A save or removal carries the review the reader was looking at
+  and is refused with a 409 if it has since changed. A review's "changed since review" bucket
+  is the server's evidence digest, not a client-side comparison. The pack only reviews
+  orphans; broken-link reviews remain available through the CLI.
+- **"Broken" is our definition.** `BROKEN_INTERNAL_EDGE` (`repo/analysis.ts`): an internal
+  edge to a page this crawl fetched that served `>= 400`. The broken list, the stat cards and
+  `crawl_metrics.broken` all read that one predicate; a target the crawl never fetched is
+  *unresolved* and never counted as broken. "Latest capture" is the latest *complete*
+  production crawl, as everywhere else.
+- **Broken external links are a separate list.** The shared link check (`external_urls`)
+  confirms an external destination gone only on a 404/410 (`BROKEN_EXTERNAL_URL`,
+  `repo/graph.ts`, mirroring `RESOURCE_IS_ABSENT` in `packages/linkcheck`); a third party's
+  403/429/timeout is *unverified* and stays neutral. The external-links API carries
+  `externalCheck`/`externalStatusCode` per link; the snapshot has `brokenExternalLinks`
+  (read fresh, outside the capture cache, because the link check keeps rewriting
+  `external_urls` after a crawl completes). The Findings tab shows a second table, the page
+  network draws confirmed-gone destinations red and dashed. The two counts are never summed.
+- **Three columns kept from before:** crawls, next crawl and status in the sites table.
+- **No page titles:** the schema has none, so paths are shown (the pack says so too).
+- Left out of the pack: its framework-comparison page and links, its Playwright, memory-soak
+  and Replit tooling.
+
+Known limit, measured 2026-10-22 on the largest crawl in the local dump (60,450 pages, 846,308
+link rows): the page network and section matrix fetch the whole capture's connections (20 MB,
+1.3 s) and recorded external links (123 MB, 4.1 s), and the snapshot is 16 MB. The server copes
+(the previous build's section matrix ran Node out of memory on this site); a browser opening
+that site's network is the one that pays. `.../connections` and `.../external-links` already
+accept `path` and `hops` for a bounded neighbourhood, so the fix, when it is wanted, is for the
+page network to ask for one.
+
 A host-run dev server and the compose `web` service both default to port 4321 — stop
 one before starting the other, or override with `PORT`.
 
