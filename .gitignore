@@ -67,3 +67,6 @@ Thumbs.db
 
 # NOTE: docs/census.json is deliberately NOT ignored — it is measured estate data
 # referenced throughout the PRD, and is documentation rather than build output.
+
+# Local database dump used to seed a dev Postgres; large and not source.
+link_graph.dump
