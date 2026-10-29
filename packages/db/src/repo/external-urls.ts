@@ -22,12 +22,16 @@ export interface ExternalUrlInput {
 }
 
 /**
- * Calendar "subscribe" links (Events Calendar plugin) wrap a `webcal://` feed URL inside
- * outlook.live.com / outlook.office.com / google.com links, one unique copy per calendar
- * view: copelandgroupusa.com alone has ~7,400, which at 1 req/s per host outruns lychee's
- * 30 min cap and loses the whole run. They are subscription actions, not destinations.
+ * Calendar actions (Events Calendar plugin and Add-to-Calendar buttons): a `webcal://`
+ * subscribe URL wrapped in an outlook.live.com / outlook.office.com / google.com link, or
+ * an "add this event" compose link on those hosts, one unique copy per calendar view or
+ * event. copelandgroupusa.com alone has ~7,400 subscribe links and pipac.com 1,896
+ * add-event links, which at 1 req/s per host outrun lychee's 30 min cap and lose the whole
+ * run (measured 2026-10-28). They are actions for a person's own calendar, not
+ * destinations.
  */
-const NOT_CALENDAR_SUBSCRIBE = "'webcal(:|%3a)'";
+const NOT_CALENDAR_ACTION =
+  "'webcal(:|%3a)|outlook\\.(live|office)\\.com/.*(rrv=addevent|calendar(/|%2f)action(/|%2f)compose)|google\\.com/calendar/(event|render)\\?.*action=template'";
 
 const COLUMNS = `url_normalized AS "urlNormalized", last_checked AS "lastChecked",
   status_code AS "statusCode", unverified, detail`;
@@ -124,7 +128,7 @@ export async function listExternalUrlsDue(
          SELECT 1 FROM unnest(s.ignore_link_patterns) p
          WHERE strpos(l.to_url_normalized, p) > 0
        )
-       AND l.to_url_normalized !~* ${NOT_CALENDAR_SUBSCRIBE}
+       AND l.to_url_normalized !~* ${NOT_CALENDAR_ACTION}
      ORDER BY 1`,
     [crawlId, checkedBefore],
   );
@@ -173,7 +177,7 @@ export async function listExternalLinksForCrawl(
                  SELECT 1 FROM unnest(s.ignore_link_patterns) p
                  WHERE strpos(l.to_url_normalized, p) > 0
                )
-               AND l.to_url_normalized !~* ${NOT_CALENDAR_SUBSCRIBE}) l
+               AND l.to_url_normalized !~* ${NOT_CALENDAR_ACTION}) l
        LEFT JOIN external_urls e ON e.url_normalized = l.to_url_normalized
        ORDER BY
          e.last_checked IS NULL DESC,        -- not-yet-checked first
@@ -193,7 +197,7 @@ export async function listExternalLinksForCrawl(
            SELECT 1 FROM unnest(s.ignore_link_patterns) p
            WHERE strpos(l.to_url_normalized, p) > 0
          )
-         AND l.to_url_normalized !~* ${NOT_CALENDAR_SUBSCRIBE}`,
+         AND l.to_url_normalized !~* ${NOT_CALENDAR_ACTION}`,
       [crawlId],
     ),
   ]);
@@ -219,7 +223,7 @@ export async function countExternalUrls(db: Queryable, crawlId: number): Promise
          SELECT 1 FROM unnest(s.ignore_link_patterns) p
          WHERE strpos(l.to_url_normalized, p) > 0
        )
-       AND l.to_url_normalized !~* ${NOT_CALENDAR_SUBSCRIBE}`,
+       AND l.to_url_normalized !~* ${NOT_CALENDAR_ACTION}`,
     [crawlId],
   );
   const total = rows[0]?.total;

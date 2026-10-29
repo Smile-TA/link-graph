@@ -39,11 +39,21 @@ const EXPORT_PARAMS =
   /[?&](?:(?:outlook-)?ical|tribe-bar-date|eventDate|eventDisplay)=|[?&]post_type=tribe_events(?:&|$)/i;
 
 /**
+ * The same calendar views when the plugin uses pretty permalinks: `/events/2026-10-26/`,
+ * `/events/month/2026-10/`, `/event-calendar/week/2026-10-14/`,
+ * `/events/tag/<tag>/day/2026-10-26/` (the first segment is any that contains "event"). Every tag and category
+ * repeats every date, so the space is unbounded. Measured 2026-10-28 on pipac.com: a
+ * 792-URL truth source, 3,025 pages fetched and 1,375 still pending, 1,884 of them these.
+ */
+const EVENT_DATE_PATH =
+  /^\/[^/?]*event[^/?]*\/(?:[^?]*\/)?(?:(?:day|week|month)\/)?\d{4}-\d{2}(?:-\d{2})?\/?(?:\?|$)/i;
+
+/**
  * Whether a root-relative path (pathname plus query, as `NormalizedUrl.path` gives it)
  * names something this crawl should fetch.
  */
 export function isCrawlableTarget(path: string): boolean {
-  if (EXPORT_PARAMS.test(path)) return false;
+  if (EXPORT_PARAMS.test(path) || EVENT_DATE_PATH.test(path)) return false;
   // The query is not part of the resource's name here: `/?s=403b` is a page and
   // `/a.pdf?v=2` is a PDF.
   const pathname = path.split("?")[0] ?? "";

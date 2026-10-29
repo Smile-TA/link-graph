@@ -60,7 +60,22 @@ export interface CrawlDeps {
   /** Shared between concurrent crawls so that one host keeps one queue (PRD §5.1). */
   readonly limiter: HostLimiter;
   readonly now: () => Date;
+  /**
+   * Wall-clock budget for one run of the loop, past which the crawl stops as `partial`.
+   * No request is slow enough to catch a crawler trap — each one answers in under a
+   * second — so the only thing that notices a calendar that mints a new URL per day is
+   * a clock. Measured 2026-10-28: pipac.com and westernassetprotection.com were 3,000
+   * and 4,200 pages into a 792- and 1,021-page site, 44 minutes in and still growing.
+   */
+  readonly maxDurationMs: number;
 }
+
+/**
+ * The largest non-sampled site in the estate is ~33 minutes at 1 req/s (run.ts), so this
+ * is 2.7x that: a legitimate crawl never meets it, and a trap is stopped within an hour
+ * and a half rather than at whenever someone looks at the queue.
+ */
+export const DEFAULT_MAX_CRAWL_MS = 90 * 60_000;
 
 export interface CrawlResult {
   readonly crawlId: number;
@@ -241,6 +256,7 @@ function resolveDeps(
     fetcher: fetcher ?? FETCHERS[mode](),
     limiter: limiter ?? createHostLimiter(),
     now: deps.now ?? (() => new Date()),
+    maxDurationMs: deps.maxDurationMs ?? DEFAULT_MAX_CRAWL_MS,
   };
   return {
     crawler,
@@ -272,6 +288,7 @@ async function run(
   let wasThrottled = wasThrottledBefore;
   let retryAfterSeconds: number | null = null;
   let stoppedBecause: string | null = null;
+  const deadline = deps.now().getTime() + deps.maxDurationMs;
 
   try {
     // Inside the `try` so a failing query still reaches `release()`: the pool and the
@@ -280,6 +297,12 @@ async function run(
     while (!atSampleCeiling(site, fetched)) {
       const entry = await nextFrontierUrl(pool, crawlId);
       if (entry === null) break;
+      if (deps.now().getTime() >= deadline) {
+        // The frontier keeps the URL, so a resume carries on from here rather than
+        // starting over — and a trap that is still there stops again, loudly.
+        stoppedBecause = `time limit of ${Math.round(deps.maxDurationMs / 60_000)} min reached with ${fetched} page(s) fetched; the site may have a crawler trap (a calendar or filter minting endless URLs)`;
+        break;
+      }
       const url = identityOf(entry.urlNormalized, hosts);
 
       const outcome = await fetchPage({ url, site: hosts, get, now: deps.now });

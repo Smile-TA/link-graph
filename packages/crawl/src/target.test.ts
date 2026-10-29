@@ -85,6 +85,36 @@ describe("isCrawlableTarget calendar exports", () => {
   });
 });
 
+describe("isCrawlableTarget calendar date paths", () => {
+  it("refuses pretty-permalink day and month views", () => {
+    for (const p of [
+      "/events/2026-10-26/",
+      "/events/month/2026-10/",
+      "/events/2027-01",
+      "/event-calendar/week/2026-10-14/",
+      "/event-calendar/tag/sales-strategy/day/2026-10-15/",
+      "/events/tag/bankers-fidelity/day/2026-10-26/",
+      "/events/tag/manhattan-life/2027-01/",
+      "/events/category/webinar/day/2026-08-01/?tribe_event_display=day",
+    ]) {
+      expect([p, isCrawlableTarget(p)]).toEqual([p, false]);
+    }
+  });
+
+  it("still admits the events pages themselves", () => {
+    for (const p of [
+      "/events/",
+      "/events/tag/medicare-supplement/",
+      "/event/webinar-live-from-pipac-its-friday-morning-5/",
+      "/events/2026-planning-guide/",
+      "/blog/2026-10/",
+      "/event-calendar/",
+    ]) {
+      expect([p, isCrawlableTarget(p)]).toEqual([p, true]);
+    }
+  });
+});
+
 describe("isCrawlableTarget near the calendar parameters", () => {
   it("still admits ordinary pagination and queries", () => {
     for (const p of [

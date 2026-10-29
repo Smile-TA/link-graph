@@ -330,7 +330,7 @@ describe("external_urls", () => {
     ).toEqual(["https://www.integritymarketing.com/"]);
   });
 
-  it("leaves calendar-subscribe (webcal) wrapper URLs out of every external listing", async () => {
+  it("leaves calendar-subscribe and add-to-calendar URLs out of every external listing", async () => {
     const crawl = await insertCompleteCrawl(
       db.pool,
       await makeSite(),
@@ -371,12 +371,23 @@ describe("external_urls", () => {
         1,
       ),
       link("https://www.google.com/calendar/render?cid=webcal://cal.example/?ical=1", 2),
+      link(
+        "https://outlook.office.com/owa/?body=&path=%2Fcalendar%2Faction%2Fcompose&rrv=addevent&subject=Webinar",
+        3,
+      ),
+      link(
+        "https://www.google.com/calendar/event?action=TEMPLATE&dates=20241221T090000&text=Webinar",
+        4,
+      ),
+      // A real page on those hosts is still a destination.
+      link("https://www.google.com/maps/place/Office", 5),
     ]);
     expect(await listExternalUrlsDue(db.pool, crawl.id, new Date("2030-01-01"))).toEqual([
       "https://real.example/",
+      "https://www.google.com/maps/place/Office",
     ]);
-    expect(await countExternalUrls(db.pool, crawl.id)).toBe(1);
-    expect((await listExternalLinksForCrawl(db.pool, crawl.id, 10, 0)).total).toBe(1);
+    expect(await countExternalUrls(db.pool, crawl.id)).toBe(2);
+    expect((await listExternalLinksForCrawl(db.pool, crawl.id, 10, 0)).total).toBe(2);
   });
 
   it("lists a crawl's external links paginated, worst-first, unchecked included via LEFT JOIN", async () => {

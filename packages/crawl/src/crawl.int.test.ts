@@ -567,6 +567,29 @@ describe("crawl", () => {
     expect(stored).toMatchObject({ status: "complete", pagesSeen: 5 });
   });
 
+  it("stops at the time limit as a partial crawl and keeps the frontier for a resume", async () => {
+    const server = await serve({ [HOST]: serve403bplan });
+    const site = await makeSite();
+    // The clock advances a minute per read, so a 3-minute budget runs out mid-crawl.
+    let ticks = 0;
+    const slowClock = () => new Date(now().getTime() + 60_000 * ticks++);
+    const error = await crawl(db.pool, site, seedsOf(SITEMAP_URLS), {
+      ...deps(server.fetcher),
+      now: slowClock,
+      maxDurationMs: 3 * 60_000,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PartialCrawlError);
+    const result = (error as PartialCrawlError).result;
+    expect(result.status).toBe("partial");
+    expect(result.stoppedBecause).toMatch(/time limit of 3 min/);
+    expect(result.pending).toBeGreaterThan(0);
+    expect(result.pages).toBeLessThan(13);
+
+    const resumed = await resumeCrawl(db.pool, result.crawlId, deps(server.fetcher));
+    expect(resumed).toMatchObject({ status: "complete", pages: 13 });
+  });
+
   it("refuses a sample ceiling that is not smaller than the inventory", async () => {
     const server = await serve({ [HOST]: serve403bplan });
     const site = await makeSite({ crawlScope: "sample", sampleCeiling: 13 });
