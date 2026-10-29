@@ -287,3 +287,18 @@ describe("siteHosts", () => {
     expect(() => siteHosts({ ...site, stageHost: null }, true)).toThrow(/no stage host/);
   });
 });
+
+describe("normalizeUrl bare query marker", () => {
+  it("drops a dangling `?` so `/?` and `/` are one URL", () => {
+    const site = {
+      canonicalHost: "planenroll.com",
+      aliases: ["planenroll.com"],
+    };
+    expect(normalizeUrl("https://www.facebook.com/?", site)?.href).toBe(
+      "https://www.facebook.com/",
+    );
+    expect(normalizeUrl("https://planenroll.com/privacy-notice/?", site)?.href).toBe(
+      "https://planenroll.com/privacy-notice/",
+    );
+  });
+});

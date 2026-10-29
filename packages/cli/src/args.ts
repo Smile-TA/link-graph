@@ -242,7 +242,9 @@ function registry(argv: readonly string[]): Invocation {
 function noArgs(command: "migrate", argv: readonly string[]): Invocation {
   const [, extra] = argv;
   if (extra !== undefined) {
-    return usageError(`unexpected argument ${quote(extra)} — ${command} takes no arguments`);
+    return usageError(
+      `unexpected argument ${quote(extra)} — ${command} takes no arguments`,
+    );
   }
   return { kind: command };
 }

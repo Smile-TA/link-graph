@@ -4,7 +4,7 @@
  * internal — they are this package's own shape, and exporting them would let a later
  * step couple to it before anything needs to.
  */
-export { resolveTruthSource } from "./resolve.js";
+export { resolveTruthSource, TruthSourceUnresolvedError } from "./resolve.js";
 export type {
   PostTypeInventory,
   ResolveOptions,

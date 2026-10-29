@@ -300,6 +300,8 @@ describe("parseArgs: migrate", () => {
   });
 
   it("refuses an extra argument", () => {
-    expect(problem(parseArgs(["migrate", "extra"]))).toMatch(/unexpected argument "extra"/);
+    expect(problem(parseArgs(["migrate", "extra"]))).toMatch(
+      /unexpected argument "extra"/,
+    );
   });
 });

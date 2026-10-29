@@ -135,9 +135,7 @@ export async function main(
     if (invocation.kind === "migrate") {
       const applied = await runMigrations(pool);
       io.out(
-        applied.length === 0
-          ? "no new migrations"
-          : `applied: ${applied.join(", ")}`,
+        applied.length === 0 ? "no new migrations" : `applied: ${applied.join(", ")}`,
       );
       return EXIT.ok;
     }

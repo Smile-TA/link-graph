@@ -116,6 +116,13 @@ describe("externalUrlVerdict", () => {
 });
 
 describe("linkcheckVerdict", () => {
+  it("does not fail a run too small to tell egress failure from bad destinations", () => {
+    expect(linkcheckVerdict({ checked: 4, conclusive: 0 })).toEqual({
+      status: "complete",
+      stoppedBecause: null,
+    });
+  });
+
   it("calls a run that answered at least one URL complete", () => {
     expect(linkcheckVerdict({ checked: 3, conclusive: 1 })).toEqual({
       status: "complete",

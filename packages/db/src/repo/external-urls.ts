@@ -21,6 +21,14 @@ export interface ExternalUrlInput {
   readonly detail: string | null;
 }
 
+/**
+ * Calendar "subscribe" links (Events Calendar plugin) wrap a `webcal://` feed URL inside
+ * outlook.live.com / outlook.office.com / google.com links, one unique copy per calendar
+ * view: copelandgroupusa.com alone has ~7,400, which at 1 req/s per host outruns lychee's
+ * 30 min cap and loses the whole run. They are subscription actions, not destinations.
+ */
+const NOT_CALENDAR_SUBSCRIBE = "'webcal(:|%3a)'";
+
 const COLUMNS = `url_normalized AS "urlNormalized", last_checked AS "lastChecked",
   status_code AS "statusCode", unverified, detail`;
 
@@ -116,6 +124,7 @@ export async function listExternalUrlsDue(
          SELECT 1 FROM unnest(s.ignore_link_patterns) p
          WHERE strpos(l.to_url_normalized, p) > 0
        )
+       AND l.to_url_normalized !~* ${NOT_CALENDAR_SUBSCRIBE}
      ORDER BY 1`,
     [crawlId, checkedBefore],
   );
@@ -163,7 +172,8 @@ export async function listExternalLinksForCrawl(
                AND NOT EXISTS (
                  SELECT 1 FROM unnest(s.ignore_link_patterns) p
                  WHERE strpos(l.to_url_normalized, p) > 0
-               )) l
+               )
+               AND l.to_url_normalized !~* ${NOT_CALENDAR_SUBSCRIBE}) l
        LEFT JOIN external_urls e ON e.url_normalized = l.to_url_normalized
        ORDER BY
          e.last_checked IS NULL DESC,        -- not-yet-checked first
@@ -182,7 +192,8 @@ export async function listExternalLinksForCrawl(
          AND NOT EXISTS (
            SELECT 1 FROM unnest(s.ignore_link_patterns) p
            WHERE strpos(l.to_url_normalized, p) > 0
-         )`,
+         )
+         AND l.to_url_normalized !~* ${NOT_CALENDAR_SUBSCRIBE}`,
       [crawlId],
     ),
   ]);
@@ -207,7 +218,8 @@ export async function countExternalUrls(db: Queryable, crawlId: number): Promise
        AND NOT EXISTS (
          SELECT 1 FROM unnest(s.ignore_link_patterns) p
          WHERE strpos(l.to_url_normalized, p) > 0
-       )`,
+       )
+       AND l.to_url_normalized !~* ${NOT_CALENDAR_SUBSCRIBE}`,
     [crawlId],
   );
   const total = rows[0]?.total;

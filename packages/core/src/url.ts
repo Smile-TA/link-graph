@@ -188,6 +188,12 @@ export function normalizeUrl(
   // parameters there is nothing to order, so leave the query exactly as found.
   if ([...url.searchParams.keys()].length >= 2) url.searchParams.sort();
 
+  // `/?` and `/` are the same resource, but the URL parser keeps the dangling `?` in
+  // `href`. The link checker rewrites it away before requesting, so a result for the
+  // `?` form is rejected as being about a different URL (measured 2026-10-27: 35 rows
+  // on planenroll.com, unverified since 2026-09-25). Assigning an empty search drops it.
+  if (url.search === "") url.search = "";
+
   url.pathname = normalizePercentEncoding(url.pathname);
   if (isInternal) url.pathname = applyWordPressPathRules(url.pathname);
 

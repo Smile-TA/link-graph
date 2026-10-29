@@ -287,6 +287,20 @@ describe("recordPage", () => {
     ).toThrow(/empty/i);
   });
 
+  it("records a response that declares content-length 0 as a page with no links", () => {
+    // Measured 2026-10-27: medicareacademy.com/events/month/?ical=1 answers
+    // `200 text/html` with `Content-Length: 0`.
+    const record = recordPage(
+      served({
+        url: url("https://403bplan.net/"),
+        headers: { "content-type": "text/html", "content-length": "0" },
+        body: "",
+      }),
+    );
+    expect(record.page.statusCode).toBe(200);
+    expect(record.links).toEqual([]);
+  });
+
   it("refuses a body the server compressed, rather than parsing zero links out of it", () => {
     // The fetcher asks for `identity` (measured 2026-08-24: 403bplan.net honours it).
     // A server that compresses anyway hands cheerio binary, which yields no links and

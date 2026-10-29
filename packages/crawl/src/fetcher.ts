@@ -81,6 +81,45 @@ const TIMEOUT_MS = 30_000;
  * PRD §5.0 chose undici for "pooling, keep-alive"; this is that pool, held explicitly.
  */
 export function createHttpFetcher(): CrawlFetcher {
+  const inner = createUnretriedFetcher();
+  return {
+    ...(inner.close === undefined ? {} : { close: () => inner.close!() }),
+    get: (url) => withRetry((u) => inner.get(u), url),
+  };
+}
+
+/**
+ * Transport failures that say "try again", not "this host is gone". Measured
+ * 2026-10-27 on 8 crawls that wrote nothing: `EAI_AGAIN` for hosts that resolved and
+ * served 200 minutes later, so the resolver, not the site, was failing. `ENOTFOUND`
+ * (a host with no DNS record) and refused connections are deliberately absent — those
+ * are answers, and retrying them only slows a crawl that is correctly stopping.
+ *
+ * A 503 is not here either: PRD §5.1 stops the host on the first one, because the ban
+ * lasts an hour and a retry seconds later would extend it.
+ */
+const TRANSIENT =
+  /EAI_AGAIN|UND_ERR_(?:HEADERS|CONNECT|BODY)_TIMEOUT|UND_ERR_SOCKET|ECONNRESET/;
+
+const RETRY_DELAYS_MS: readonly number[] = [2_000, 8_000];
+
+export async function withRetry(
+  get: (url: string) => Promise<FetchResult>,
+  url: string,
+  sleep: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
+  delays: readonly number[] = RETRY_DELAYS_MS,
+): Promise<FetchResult> {
+  let result = await get(url);
+  for (const delay of delays) {
+    if (result.kind !== "transport-error" || !TRANSIENT.test(result.detail)) break;
+    await sleep(delay);
+    result = await get(url);
+  }
+  return result;
+}
+
+function createUnretriedFetcher(): CrawlFetcher {
   // One connection per origin, because the limiter allows one request per host at a time
   // anyway (PRD §5.1) and a second socket would only be a second way to be noticed by
   // Wordfence.

@@ -68,3 +68,33 @@ describe("isCrawlableTarget", () => {
     expect(isCrawlableTarget("/wp-content/uploads/a.pdf?v=2")).toBe(false);
   });
 });
+
+describe("isCrawlableTarget calendar exports", () => {
+  it("refuses iCal export URLs, which are not pages", () => {
+    for (const p of [
+      "/events/month/?ical=1",
+      "/events/today/?ical=1",
+      "/events/?outlook-ical=1&tribe-bar-date=2026-10",
+      "/insurance-agent-training/list/page/6/?tribe-bar-date=2026-08-15",
+      "/page/5/?eventDate=2026-10-24&eventDisplay=day&post_type=tribe_events",
+      "/insurance-agent-training/list/page/9/?eventDisplay=past&tribe-bar-date=2026-10-14",
+      "/?post_type=tribe_events",
+    ]) {
+      expect([p, isCrawlableTarget(p)]).toEqual([p, false]);
+    }
+  });
+});
+
+describe("isCrawlableTarget near the calendar parameters", () => {
+  it("still admits ordinary pagination and queries", () => {
+    for (const p of [
+      "/page/2/",
+      "/?s=events",
+      "/events/",
+      "/blog/?paged=2",
+      "/?post_type=page",
+    ]) {
+      expect([p, isCrawlableTarget(p)]).toEqual([p, true]);
+    }
+  });
+});

@@ -26,10 +26,24 @@
 const PAGE_EXTENSIONS = new Set(["html", "htm", "php"]);
 
 /**
+ * Query parameters that turn a page URL into a calendar export or a calendar view, not a
+ * page. The Events Calendar plugin serves `?ical=1` as `text/calendar` on some sites and
+ * as a zero-length `200 text/html` on others (measured 2026-10-27: neishloss.com and
+ * medicareacademy.com), and its date navigation (`tribe-bar-date`, `eventDate`,
+ * `eventDisplay`, `post_type=tribe_events`) mints a new URL for every day and month, each
+ * linking to more of them. Measured 2026-10-28 on saversmarketing.com: a 60-URL truth
+ * source, 5,050 pages fetched and still 1,196 pending, 99% of them these. None is a node
+ * a link graph has.
+ */
+const EXPORT_PARAMS =
+  /[?&](?:(?:outlook-)?ical|tribe-bar-date|eventDate|eventDisplay)=|[?&]post_type=tribe_events(?:&|$)/i;
+
+/**
  * Whether a root-relative path (pathname plus query, as `NormalizedUrl.path` gives it)
  * names something this crawl should fetch.
  */
 export function isCrawlableTarget(path: string): boolean {
+  if (EXPORT_PARAMS.test(path)) return false;
   // The query is not part of the resource's name here: `/?s=403b` is a page and
   // `/a.pdf?v=2` is a PDF.
   const pathname = path.split("?")[0] ?? "";

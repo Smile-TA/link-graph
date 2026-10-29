@@ -638,6 +638,21 @@ function readPostTypes(
 }
 
 /**
+ * A truth source that exists but could not be read. A class and not a bare `Error` so a
+ * caller that has been told, per site, that this is expected can say so without matching
+ * on a message; everyone else still gets the loud failure below.
+ */
+export class TruthSourceUnresolvedError extends Error {
+  constructor(
+    message: string,
+    readonly findings: readonly TruthFinding[],
+  ) {
+    super(message);
+    this.name = "TruthSourceUnresolvedError";
+  }
+}
+
+/**
  * The resolution order's answer, or an exception. There is deliberately no outcome that
  * says "no truth source" about a site whose truth source we merely failed to read:
  * `none` disables orphan detection for that site permanently and quietly, and PRD §13
@@ -664,11 +679,12 @@ function decide(
       f.kind === "sitemap-incomplete",
   );
   if (unresolved.length > 0) {
-    throw new Error(
+    throw new TruthSourceUnresolvedError(
       `truth source for ${site.siteId} could not be resolved: ` +
         unresolved.map((f) => `${f.kind}: ${f.detail}`).join("; ") +
         `. Reporting this site as having no truth source would disable orphan ` +
         `detection for it silently.`,
+      unresolved,
     );
   }
   return "none";

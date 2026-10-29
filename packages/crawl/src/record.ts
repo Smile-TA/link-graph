@@ -138,6 +138,11 @@ function parseBody(input: RecordInput): ExtractedPage | null {
         `no links and report the page as a leaf.`,
     );
   }
+  // A server that declares `content-length: 0` said it served nothing, so the empty
+  // body is the answer and not a failed read: recorded like any other page with no
+  // parseable body. An empty body with no such declaration may be a truncated fetch,
+  // and still throws below.
+  if (body === "" && headers["content-length"]?.trim() === "0") return null;
   // extractPage refuses an empty body itself, with the same reasoning; this call site
   // is where the URL is in scope.
   return extractPage(body, input.url.href, input.site);

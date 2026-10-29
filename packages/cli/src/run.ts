@@ -35,7 +35,13 @@ import {
   type SiteRow,
   type TruthSource,
 } from "@link-graph/db";
-import { createHttpFetcher, resolveTruthSource, type TruthDeps } from "@link-graph/truth";
+import {
+  createHttpFetcher,
+  resolveTruthSource,
+  TruthSourceUnresolvedError,
+  type TruthDeps,
+  type TruthSourceResult,
+} from "@link-graph/truth";
 import type { Pool } from "pg";
 import { UsageError } from "./exit.js";
 import { siteBySlug } from "./registry.js";
@@ -77,10 +83,32 @@ export async function runCrawlCommand(
   const hosts = siteHosts(site, env === "stage");
 
   progress(`resolving the truth source for ${hosts.canonicalHost}…`);
-  const truth = await resolveTruthSource(
-    { siteId: site.siteId, canonicalHost: hosts.canonicalHost, aliases: hosts.aliases },
-    deps.truth ?? createHttpFetcher(),
-  );
+  let truth: TruthSourceResult;
+  try {
+    truth = await resolveTruthSource(
+      { siteId: site.siteId, canonicalHost: hosts.canonicalHost, aliases: hosts.aliases },
+      deps.truth ?? createHttpFetcher(),
+    );
+  } catch (error) {
+    // A site the registry already records as `none` has been looked at and curated: its
+    // REST and sitemap are known not to be usable (theme pages answer where JSON or XML
+    // should, measured 2026-10-27 on seven sites), so an unreadable source is what we
+    // expect and the crawl proceeds for links and structure, with orphans undetectable.
+    // A site that is not recorded as `none` still fails loudly.
+    if (!(error instanceof TruthSourceUnresolvedError) || site.truthSource !== "none") {
+      throw error;
+    }
+    progress(`truth source unreadable (registry says none); crawling without one`);
+    truth = {
+      kind: "none",
+      urls: [],
+      postTypes: [],
+      counts: { total: null, rest: null, sitemap: null },
+      taxonomies: [],
+      findings: error.findings,
+      requests: 0,
+    };
+  }
   // The assignment `packages/truth` names as the seam between the two vocabularies: a
   // `TruthSourceKind` that is not a `TruthSource` is a compile error here rather than a
   // constraint violation at INSERT.

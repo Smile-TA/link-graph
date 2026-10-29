@@ -156,12 +156,20 @@ export interface LinkcheckVerdict {
  * Where between 1 and 642 the honest cut-off lies is a question about how often
  * third-party hosts block us, which needs a full estate run to answer and has none yet.
  */
+/** Fewer URLs than this cannot distinguish broken egress from a few bad destinations. */
+export const MIN_EGRESS_SAMPLE = 10;
+
 export function linkcheckVerdict(progress: LinkcheckProgress): LinkcheckVerdict {
   const { checked, conclusive } = progress;
   // Nothing due is not a failure: the TTL is doing its job and the caller is told the
   // number so it cannot print "0 broken" as though 642 had been checked.
   if (checked === 0) return { status: "complete", stoppedBecause: null };
   if (conclusive > 0) return { status: "complete", stoppedBecause: null };
+  // A handful of due URLs all failing is the sites, not our egress: `after-crawl` jobs
+  // check only what is new, and 1-4 URLs that are all trailing-`?` rewrites or refusing
+  // hosts failed six jobs on 2026-10-27 (crawls 376, 379, 380, 413, 424, 426). Their
+  // unverified rows are written, so the stamp the TTL reads covers at most this few.
+  if (checked < MIN_EGRESS_SAMPLE) return { status: "complete", stoppedBecause: null };
   return {
     status: "partial",
     stoppedBecause:

@@ -267,13 +267,16 @@ async function run(
   const queue = deps.limiter.forHost(hosts.canonicalHost, site.rateLimit);
   const get = (url: string) => queue.schedule(() => deps.fetcher.get(url));
 
-  let fetched = (await countFrontier(pool, crawlId)).fetched;
+  let fetched = 0;
   let aliasHops = 0;
   let wasThrottled = wasThrottledBefore;
   let retryAfterSeconds: number | null = null;
   let stoppedBecause: string | null = null;
 
   try {
+    // Inside the `try` so a failing query still reaches `release()`: the pool and the
+    // limiter above are already open by here, and nothing else would close them.
+    fetched = (await countFrontier(pool, crawlId)).fetched;
     while (!atSampleCeiling(site, fetched)) {
       const entry = await nextFrontierUrl(pool, crawlId);
       if (entry === null) break;

@@ -14,6 +14,7 @@ import {
   enumerateSitemap,
   paginationShortfall,
   resolveTruthSource,
+  TruthSourceUnresolvedError,
 } from "./resolve.js";
 import { declaredTaxonomies, parsePostTypes, type RestPostType } from "./rest.js";
 import { parseSitemap, readSitemapResponse, sitemapChild } from "./sitemap.js";
@@ -556,6 +557,27 @@ describe("resolveTruthSource refuses rather than resolving to 'none'", () => {
     });
     await expect(resolveTruthSource(site("403bplan.net"), deps)).rejects.toThrow(
       /could not be resolved: rest-incomplete.*rest_post_invalid_page_number/,
+    );
+  });
+
+  it("throws a typed error that carries the unresolved findings", async () => {
+    const deps = recordedFetcher({
+      substitute: {
+        [`https://403bplan.net/wp-json/wp/v2/pages?${FIELDS}`]: `https://integrity.com/wp-json/wp/v2/blog?${FIELDS}`,
+        [`https://403bplan.net/wp-json/wp/v2/pages?${FIELDS}&page=2`]: `https://integrity.com/wp-json/wp/v2/blog?${FIELDS}&page=6`,
+        "https://403bplan.net/sitemap_index.xml":
+          "https://123.planenroll.com/sitemap_index.xml",
+        "https://403bplan.net/sitemap.xml": "https://123.planenroll.com/sitemap.xml",
+        "https://403bplan.net/wp-sitemap.xml":
+          "https://123.planenroll.com/wp-sitemap.xml",
+      },
+    });
+    const error = await resolveTruthSource(site("403bplan.net"), deps).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(TruthSourceUnresolvedError);
+    expect((error as TruthSourceUnresolvedError).findings[0]?.kind).toBe(
+      "rest-incomplete",
     );
   });
 });
