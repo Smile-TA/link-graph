@@ -74,7 +74,8 @@ export function EgoNetwork() {
   const [, navigate] = useLocation();
   const params = new URLSearchParams(useSearch());
   const hops = params.get('hops') === '2' ? 2 : 1;
-  const showExternal = params.get('external') === '1';
+  const externalFocusUrl = params.get('url');
+  const showExternal = params.get('external') === '1' || !!externalFocusUrl;
   const externalSearch = showExternal ? params.get('externalSearch') ?? '' : '';
   const crawlId = site.crawlId ?? '0';
   const externalQuery = useGetLinkGraphExternalLinks(site.siteId, crawlId, undefined, {
@@ -87,8 +88,17 @@ export function EgoNetwork() {
     if (!showExternal || source !== 'database' || !externalQuery.data) return links;
     return [...links, ...externalQuery.data.map(edge => ({ ...edge, isExternal: true }))];
   }, [links, showExternal, source, externalQuery.data]);
-  const direction: LinkDirection = params.get('direction') === 'incoming' ? 'incoming' : params.get('direction') === 'outgoing' ? 'outgoing' : 'all';
-  const focus = pages.find(page => page.path === (params.get('path') ?? '/'));
+  // An external destination has no outgoing links in a capture, so its network is "who links here".
+  const direction: LinkDirection = params.get('direction') === 'incoming' ? 'incoming' : params.get('direction') === 'outgoing' ? 'outgoing' : externalFocusUrl ? 'incoming' : 'all';
+  const focus = useMemo(() => {
+    if (externalFocusUrl) {
+      const row = graphLinks.find(link => link.isExternal && link.toUrl === externalFocusUrl);
+      return { url: externalFocusUrl, path: externalFocusUrl, title: externalFocusUrl,
+        statusCode: row?.externalCheck === 'broken' ? row.externalStatusCode ?? null : null,
+        pageClass: 'external', depth: null, indexable: false, inboundCount: 0, outboundCount: 0, isExternal: true } as typeof pages[number];
+    }
+    return pages.find(page => page.path === (params.get('path') ?? '/'));
+  }, [externalFocusUrl, graphLinks, pages, params.get('path')]);
   const unfilteredNetworks = useMemo(() => ({
     all: getEgoNetwork(pages, graphLinks, focus?.url ?? '', hops, 'all', showExternal),
     incoming: getEgoNetwork(pages, graphLinks, focus?.url ?? '', hops, 'incoming', showExternal),
@@ -120,6 +130,14 @@ export function EgoNetwork() {
   function hrefForPage(path: string) {
     const next = new URLSearchParams(params);
     next.set('path', path);
+    next.delete('url');
+    return `${sitePath}/ego?${next}`;
+  }
+  function hrefForExternal(url: string) {
+    const next = new URLSearchParams(params);
+    next.set('url', url);
+    next.set('direction', 'incoming');
+    next.delete('externalSearch');
     return `${sitePath}/ego?${next}`;
   }
   function setOption(key: string, value: string) {
@@ -539,12 +557,14 @@ export function EgoNetwork() {
   ];
 
   return <>
-    <div className="view-heading"><div><h2>Page network <span className="explorer-note">(ego network)</span></h2><p>Explore direct neighbors or expand to two hops. Click any page to refocus.</p></div><Link href={hrefForPage('/')} className="site-link mono"><ArrowLeft size={12} /> Home focus</Link></div>
-    <FocusPagePicker pages={pages} focus={focus} onSelect={path => navigate(hrefForPage(path))} />
+    <div className="view-heading"><div><h2>Page network</h2><p>Explore direct neighbors or expand to two hops. Click any page to refocus.</p></div><Link href={hrefForPage('/')} className="site-link mono"><ArrowLeft size={12} /> Home focus</Link></div>
+    {externalFocusUrl
+      ? <p className="explorer-note" data-testid="external-focus-note">External destination: <ExternalDestinationLink url={externalFocusUrl} className="site-link" /> Showing every captured page that links to it. Outgoing links from external sites are not crawled.</p>
+      : <FocusPagePicker pages={pages} focus={focus} onSelect={path => navigate(hrefForPage(path))} />}
     <div className="network-toolbar">
       <div><div className="control-label">Depth</div><div className="direction-filter" role="group" aria-label="Network hop depth">{([1, 2] as const).map(value => <button type="button" className={`direction-option ${hops === value ? 'selected' : ''}`} aria-pressed={hops === value} key={value} data-testid={`hop-filter-${value}`} onClick={() => setOption('hops', String(value))}>{value} {value === 1 ? 'hop' : 'hops'}</button>)}</div></div>
       <div><div className="control-label">Link direction</div><div className="direction-filter" role="group" aria-label="Filter network by link direction">{options.map(option => <button type="button" className={`direction-option ${direction === option.key ? 'selected' : ''}`} aria-pressed={direction === option.key} key={option.key} data-testid={`direction-filter-${option.key}`} onClick={() => setOption('direction', option.key)}>{option.label}<span>{linkRowCount(networks[option.key].links)}</span></button>)}</div></div>
-      <div><div className="control-label">Destinations</div><label className="external-network-toggle"><Switch checked={showExternal} onCheckedChange={checked => setOption('external', checked ? '1' : '0')} aria-label="Show external links" data-testid="toggle-external-links" />Show external links</label></div>
+      <div><div className="control-label">Destinations</div><label className="external-network-toggle"><Switch checked={showExternal} disabled={!!externalFocusUrl} onCheckedChange={checked => setOption('external', checked ? '1' : '0')} aria-label="Show external links" data-testid="toggle-external-links" />Show external links</label></div>
       {showExternal && <div className="external-network-search"><label className="control-label" htmlFor="external-destination-search">External domain or destination</label><div className="external-search-input"><input id="external-destination-search" type="search" placeholder="e.g. youtube.com or /embed/" value={externalSearch} onChange={event => setOption('externalSearch', event.target.value)} aria-describedby="external-filter-scope" />{externalSearch && <button type="button" className="network-action" onClick={() => setOption('externalSearch', '')}>Clear filter</button>}</div></div>}
     </div>
     {showExternal && <p id="external-filter-scope" className="explorer-note">Case-insensitive text match on the recorded external destination URL, including its domain and path. Only external destinations and their link evidence are filtered; internal pages, connections and captured-page metrics are unchanged. Counts cover this focus, direction and hop depth, before graph or detail-list limits. External row counts include every recorded link from an internal page in this neighborhood to a reachable external destination, including shared destinations. Domain counts use distinct hostnames (subdomains are separate).</p>}
@@ -610,7 +630,7 @@ export function EgoNetwork() {
               })}
             </svg>
             {renderedNodes.map(node => <div key={node.page.url} data-graph-node-id={node.page.url} data-external={node.page.isExternal || undefined} data-moving={draggingNodeId === node.page.url} className={`graph-node ${highlightUrl === node.page.url ? 'locate-highlight' : ''} ${node.page.isExternal ? 'external-node' : ''} ${node.hop === 2 ? 'second-hop-node' : ''} ${hasHttpFailure(node.page.statusCode) ? 'broken-node' : ''}`} style={{ left: `${(windowed ? pinnedPositionsRef.current.get(node.page.url)?.x : undefined) ?? node.x}px`, top: `${(windowed ? pinnedPositionsRef.current.get(node.page.url)?.y : undefined) ?? node.y}px`, transform: 'translate(-50%,-50%)' }} title={`${node.page.url} · ${node.hop} hop${node.hop === 2 ? 's' : ''}`}>
-              {node.page.isExternal ? <ExternalDestinationLink url={node.page.url} className="graph-node-path" /> : <Link className="graph-node-path" draggable={false} href={hrefForPage(node.page.path)} aria-label={`${pageLabel(node.page.path)}, ${node.hop} hop${node.hop === 2 ? 's' : ''}${hasHttpFailure(node.page.statusCode) ? `, HTTP ${node.page.statusCode}` : ''}`}>{pageLabel(node.page.path)}</Link>}
+              {node.page.isExternal ? <><ExternalDestinationLink url={node.page.url} className="graph-node-path" /><Link className="site-link" href={hrefForExternal(node.page.url)}>Who links here</Link></> : <Link className="graph-node-path" draggable={false} href={hrefForPage(node.page.path)} aria-label={`${pageLabel(node.page.path)}, ${node.hop} hop${node.hop === 2 ? 's' : ''}${hasHttpFailure(node.page.statusCode) ? `, HTTP ${node.page.statusCode}` : ''}`}>{pageLabel(node.page.path)}</Link>}
               <span className={`node-direction ${node.incoming && node.outgoing ? 'both' : node.outgoing ? 'outgoing' : 'incoming'}`}>{node.incoming && node.outgoing ? '↔ Both ways' : node.outgoing ? '→ Outgoing' : '← Incoming'}</span>
               <span className="node-hop">{node.hop} {node.hop === 1 ? 'hop' : 'hops'}{hasHttpFailure(node.page.statusCode) ? ` · HTTP ${node.page.statusCode}` : ''}</span>
               {node.page.isExternal && <span className="external-node-label">{hasHttpFailure(node.page.statusCode) ? 'External · broken per link check' : 'External · unverified'}</span>}
@@ -631,7 +651,7 @@ export function EgoNetwork() {
               if (positions.has(node.page.url)) setLocateUrl(node.page.url);
               else confirmExpansion(network.nodes.length, action);
             }}
-            heading={node => <div className="connection-node-heading">{node.page.isExternal ? <ExternalDestinationLink url={node.page.url} className="site-link" /> : <Link href={hrefForPage(node.page.path)} className="site-link">{pageLabel(node.page.path)}</Link>}<span className={`hop-badge hop-${node.hop}`}>{node.hop} {node.hop === 1 ? 'hop' : 'hops'}</span>{node.page.isExternal && <span className="external-node-label">{hasHttpFailure(node.page.statusCode) ? 'External · broken per link check' : 'External · HTTP unverified'}</span>}{hasHttpFailure(node.page.statusCode) && <span className="http-error">HTTP {node.page.statusCode}</span>}</div>}
+            heading={node => <div className="connection-node-heading">{node.page.isExternal ? <><ExternalDestinationLink url={node.page.url} className="site-link" /><Link href={hrefForExternal(node.page.url)} className="site-link">Who links here</Link></> : <Link href={hrefForPage(node.page.path)} className="site-link">{pageLabel(node.page.path)}</Link>}<span className={`hop-badge hop-${node.hop}`}>{node.hop} {node.hop === 1 ? 'hop' : 'hops'}</span>{node.page.isExternal && <span className="external-node-label">{hasHttpFailure(node.page.statusCode) ? 'External · broken per link check' : 'External · HTTP unverified'}</span>}{hasHttpFailure(node.page.statusCode) && <span className="http-error">HTTP {node.page.statusCode}</span>}</div>}
             evidence={edge => <div className={`link-meta ${failures.has(`${edge.fromUrl}|${edge.toUrl}`) ? 'broken-link-meta' : ''}`}>{edge.anchor || 'No anchor text'} · {edge.container}{(edge.count ?? 1) > 1 ? ` · ${edge.count} matching rows` : ''}<br />{renderEvidenceLink(edge.fromUrl)} → {renderEvidenceLink(edge.toUrl, edge.isExternal)}{failures.has(`${edge.fromUrl}|${edge.toUrl}`) && <span className="http-error"> Broken target</span>}</div>}
           />
           {!network.nodes.length && <p className="explorer-note">No {direction === 'all' ? 'direct' : direction} links for this page.</p>}

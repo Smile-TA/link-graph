@@ -417,3 +417,9 @@ a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible
 @media (prefers-reduced-motion: reduce) { .graph-node.locate-highlight { animation: none; } }
 .graph-node.external-node.broken-node { border: 1px dashed #d92d20; background: #fff0ee; color: #a5261e; }
 .external-node.broken-node .external-node-label { color: #a5261e; }
+
+.chart-head { margin:0 0 -4px; border-bottom:1px solid #D1D1D1; padding-bottom:6px; font-weight:600; }
+.matrix-filters { display:flex; gap:17px; flex-wrap:wrap; }
+.graph-layout > * { min-width:0; }
+.graph-canvas { min-width:0; }
+.graph-zoom-stage { margin:0 auto; }

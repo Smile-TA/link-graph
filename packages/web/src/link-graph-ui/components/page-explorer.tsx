@@ -10,7 +10,7 @@ export function PageExplorer() {
   const matches = pages.filter(page => `${page.path} ${page.title}`.toLowerCase().includes(search.toLowerCase()));
   return <section className="panel page-explorer" aria-label={`All pages for ${site.host}`}>
     <div className="finding-panel-head page-explorer-head">
-      <div><h2 className="explorer-title">{source === 'database' ? 'All page records' : 'All captured pages'}</h2><p className="explorer-note">Open any page’s ego network to inspect its incoming and outgoing links.</p></div>
+      <div><h2 className="explorer-title">{source === 'database' ? 'All page records' : 'All captured pages'}</h2><p className="explorer-note">Open any page’s network to inspect its incoming and outgoing links.</p></div>
       <label className="page-search"><Search size={14} /><span className="sr-only">Search pages</span><input type="search" placeholder="Search path or title…" value={search} onChange={event => { setSearch(event.target.value); setLimit(12); }} /></label>
     </div>
     <div className="explorer-result-count">{matches.length} of {pages.length} pages</div>

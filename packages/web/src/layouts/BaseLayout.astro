@@ -35,7 +35,6 @@ const isSites = !site && section !== 'comparison';
             <a href={`${base}/sites`}>Sites</a>
             {site && <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg><strong class="current-site-crumb" aria-current="page" title={site.host}>{site.host}</strong></>}
           </nav>
-          <div class="preview-label"><span class="preview-dot"></span> Imported database</div>
         </header>
         <main class="content fade-up"><slot /></main>
       </div>

@@ -25,6 +25,18 @@ describe('Captured graph evidence', () => {
     expect(filterLinksByDirection(links, root, direction)).toEqual(links.filter(edge =>
       direction === 'incoming' ? edge.toUrl === root : edge.fromUrl === root));
   });
+  it('focuses an external destination on the pages that link to it', () => {
+    const extLinks = [...links, ...external.map(row => ({ ...row, isExternal: true }))];
+    const target = external.find(row => row.fromUrl && row.toUrl)!.toUrl;
+    const sources = new Set(external.filter(row => row.toUrl === target).map(row => row.fromUrl));
+    const result = getEgoNetwork(pages, extLinks, target, 1, 'incoming', true);
+    expect(new Set(result.nodes.map(node => node.page.url))).toEqual(sources);
+    expect(result.nodes.every(node => node.hop === 1 && !node.page.isExternal)).toBe(true);
+    expect(result.links.every(edge => edge.toUrl === target)).toBe(true);
+    // The UI filters every network; the focus's own edges must survive it (they draw the arrows).
+    expect(filterExternalDestinations(result, '').links).toEqual(result.links);
+    expect(result.links.length).toBeGreaterThan(0);
+  });
   it('preserves shared terminal external evidence when filtering', () => {
     const result = getEgoNetwork(pages, [...links, ...external.map(row => ({ ...row, isExternal: true }))], root, 2, 'all', true);
     const filtered = filterExternalDestinations(result, ' VIDEO.TEST/watch ');

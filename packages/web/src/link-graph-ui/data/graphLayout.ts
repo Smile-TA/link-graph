@@ -4,6 +4,8 @@ export function getGraphLayout(directCount: number, secondCount: number, hops: 1
   const directRadius = radiusFor(directCount);
   const secondRadius = directRadius + radiusFor(secondCount);
   const graphRadius = hops === 1 ? directRadius : secondRadius;
-  const sceneSize = Math.max(560, Math.ceil((graphRadius + 110 * zoomSpread) * 2));
+  // Pad by one node half-width, not by the zoom spread: the ring already grows with zoom,
+  // and extra padding is blank scroll area no node can reach.
+  const sceneSize = Math.max(420, Math.ceil((graphRadius + 90) * 2));
   return { directRadius, secondRadius, sceneSize, zoomSpread };
 }

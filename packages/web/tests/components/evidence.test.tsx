@@ -66,8 +66,11 @@ describe('Analysis views', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Next columns' }));
     expect(within(table).getAllByRole('columnheader').map(cell => cell.textContent)).not.toEqual(firstHead);
     await userEvent.click(screen.getByRole('button', { name: 'Next rows' }));
-    await userEvent.type(screen.getByRole('searchbox'), 'section-63');
+    await userEvent.type(screen.getByLabelText('Filter rows (from section)'), 'section-63');
     expect(screen.getByRole('button', { name: 'Previous rows' })).toBeDisabled();
+    // Row filtering leaves the column page where it was.
+    expect(screen.getByRole('button', { name: 'Previous columns' })).toBeEnabled();
+    await userEvent.type(screen.getByLabelText('Filter columns (to section)'), 'section-63');
     expect(screen.getByRole('button', { name: 'Previous columns' })).toBeDisabled();
   });
 });

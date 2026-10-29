@@ -44,12 +44,13 @@ export function getEgoNetwork(pages: Page[], links: Link[], focusUrl: string, ho
     if (direction !== 'outgoing') add(link.toUrl, link.fromUrl);
   });
   const nodes: EgoNode[] = [];
-  if (!pageMap.has(focusUrl) || pageMap.get(focusUrl)?.isExternal) return { nodes, links: [] as Link[], distances };
+  // An external focus is allowed: it is a terminal node, so only its inbound side is walked.
+  if (!pageMap.has(focusUrl)) return { nodes, links: [] as Link[], distances };
   distances.set(focusUrl, 0);
   const queue = [focusUrl];
   for (let i = 0; i < queue.length; i++) {
     const current = queue[i], depth = distances.get(current)!;
-    if (depth >= hops || pageMap.get(current)?.isExternal) continue;
+    if (depth >= hops || (pageMap.get(current)?.isExternal && current !== focusUrl)) continue;
     for (const neighbor of adjacent.get(current) ?? []) {
       if (distances.has(neighbor)) continue;
       distances.set(neighbor, depth + 1);
@@ -61,7 +62,7 @@ export function getEgoNetwork(pages: Page[], links: Link[], focusUrl: string, ho
     const from = distances.get(link.fromUrl), to = distances.get(link.toUrl);
     if (from === undefined || to === undefined) return false;
     // Preserve shared-destination evidence even from boundary source pages.
-    if (link.isExternal) return direction !== 'incoming';
+    if (link.isExternal) return direction !== 'incoming' || link.toUrl === focusUrl;
     if (hops === 1 && from !== 0 && to !== 0) return false;
     return direction === 'all' || (direction === 'outgoing' ? from < to : from > to);
   });
@@ -79,7 +80,8 @@ export function filterExternalDestinations(network: Network, search: string) {
   const matches = external.filter(node => node.page.url.toLowerCase().includes(term));
   const matchingUrls = new Set(matches.map(node => node.page.url));
   const nodes = network.nodes.filter(node => !node.page.isExternal || matchingUrls.has(node.page.url));
-  const links = network.links.filter(edge => !edge.isExternal || matchingUrls.has(edge.toUrl));
+  // The focus is never in `nodes`, so an external focus's own inbound edges must be kept explicitly.
+  const links = network.links.filter(edge => !edge.isExternal || matchingUrls.has(edge.toUrl) || network.distances.get(edge.toUrl) === 0);
   const domains = (rows: EgoNode[]) => new Set(rows.flatMap(node => {
     try { const host = new URL(node.page.url).hostname.toLowerCase(); return host ? [host] : []; }
     catch { return []; }

@@ -18,9 +18,9 @@ export function Treemap() {
   </>;
 }
 
-function DistributionCard({ title, note, rows }: { title: string; note: string; rows: [string, number][] }) {
+function DistributionCard({ title, note, rows, heading, unit }: { title: string; note: string; rows: [string, number][]; heading?: [string, string]; unit?: string }) {
   const max = Math.max(1, ...rows.map((row) => row[1]));
-  return <div className="panel chart-panel"><div className="section-title"><h2>{title}</h2><span className="mono" style={{ color: '#555555' }}>{rows.length} groups</span></div><p style={{ color: '#555555', fontSize: 10, margin: '-5px 0 17px' }}>{note}</p>{rows.length ? rows.map(([label, count]) => <div className="chart-row" key={label} data-testid={`distribution-${title.toLowerCase().replaceAll(' ', '-')}-${label}`}><span className="chart-label">{label}</span><div className="chart-track"><span style={{ width: `${Math.max(2, (count / max) * 100)}%` }} /></div><span className="chart-count">{count}</span></div>) : <EmptyState title="No distribution available" body="Page rows from the fixture will populate this view." />}</div>;
+  return <div className="panel chart-panel"><div className="section-title"><h2>{title}</h2><span className="mono" style={{ color: '#555555' }}>{rows.length} groups</span></div><p style={{ color: '#555555', fontSize: 10, margin: '-5px 0 17px' }}>{note}</p>{heading && <div className="chart-row chart-head"><span className="chart-label">{heading[0]}</span><span /><span className="chart-count">{heading[1]}</span></div>}{rows.length ? rows.map(([label, count]) => <div className="chart-row" key={label} data-testid={`distribution-${title.toLowerCase().replaceAll(' ', '-')}-${label}`}><span className="chart-label">{label}</span><div className="chart-track"><span style={{ width: `${Math.max(2, (count / max) * 100)}%` }} /></div><span className="chart-count">{count}{unit ? ` ${count === 1 ? unit : unit + 's'}` : ''}</span></div>) : <EmptyState title="No distribution available" body="Page rows from the fixture will populate this view." />}</div>;
 }
 
 export function Distributions() {
@@ -36,18 +36,20 @@ export function Distributions() {
   const inboundRows = [...inbound].sort((a, b) => Number(a[0].split(' ')[0]) - Number(b[0].split(' ')[0]));
   return <>
     <div className="view-heading"><div><h2>Page depth &amp; links</h2><p>Understand how many steps from the entry point and how inbound links are spread.</p></div><span className="mono">{pages.length} page rows</span></div>
-    <div className="distribution-grid"><DistributionCard title="Page depth" note="Number of pages at each recorded depth." rows={depthRows} /><DistributionCard title="Inbound links" note="Number of pages with each recorded inbound-link count." rows={inboundRows} /></div>
+    <div className="distribution-grid"><DistributionCard title="Page depth" note="Number of pages at each recorded depth." rows={depthRows} /><DistributionCard title="Inbound links" note="How many pages receive 0, 1, 2… internal links from other pages. A long bar at “0 inbound” means many pages nothing links to." rows={inboundRows} heading={['Links pointing at a page', 'Pages']} /></div>
     <div className="panel panel-pad" style={{ marginTop: 17 }}><div className="section-title"><h2>Read the pattern</h2><span className="mono" style={{ color: '#555555' }}>RECORDED PAGE VALUES</span></div><p style={{ color: '#555555', fontSize: 11, lineHeight: 1.65, margin: 0 }}>A page's depth describes its distance in the captured link structure. Inbound links count internal pages that link to it. The charts summarize page rows; they do not estimate missing crawl data.</p></div>
   </>;
 }
 
 export function Matrix() {
   const { pages, links } = useFixture();
-  const [search, setSearch] = useState('');
+  const [rowSearch, setRowSearch] = useState('');
+  const [columnSearch, setColumnSearch] = useState('');
   const [rowPage, setRowPage] = useState(0);
   const [columnPage, setColumnPage] = useState(0);
   const allNames = useMemo(() => [...new Set(pages.map(sectionName))].sort((a, b) => a.localeCompare(b)), [pages]);
-  const names = allNames.filter(name => name.toLowerCase().includes(search.toLowerCase()));
+  const rowMatches = allNames.filter(name => name.toLowerCase().includes(rowSearch.toLowerCase()));
+  const columnMatches = allNames.filter(name => name.toLowerCase().includes(columnSearch.toLowerCase()));
   const { counts, internalLinks } = useMemo(() => {
     const pageMap = new Map(pages.map(page => [page.url, page]));
     const counts = new Map<string, number>();
@@ -61,12 +63,25 @@ export function Matrix() {
     });
     return { counts, internalLinks };
   }, [pages, links]);
-  const rowNames = names.slice(rowPage * 20, rowPage * 20 + 20);
-  const columnNames = names.slice(columnPage * 20, columnPage * 20 + 20);
+  const rowNames = rowMatches.slice(rowPage * 20, rowPage * 20 + 20);
+  const columnNames = columnMatches.slice(columnPage * 20, columnPage * 20 + 20);
   return <>
     <div className="view-heading"><div><h2>Section relationships</h2><p>Contextual internal links between captured URL sections; repeated header and footer links are excluded.</p></div><span className="mono">{internalLinks} contextual links</span></div>
-    {allNames.length > 20 && <div className="graph-expansion"><label className="page-search">Search sections<input type="search" value={search} onChange={event => { setSearch(event.target.value); setRowPage(0); setColumnPage(0); }} /></label><div className="graph-expansion-actions"><button className="network-action" disabled={!rowPage} onClick={() => setRowPage(rowPage - 1)}>Previous rows</button><span>Rows {rowPage * 20 + 1}–{Math.min((rowPage + 1) * 20, names.length)} of {names.length}</span><button className="network-action" disabled={(rowPage + 1) * 20 >= names.length} onClick={() => setRowPage(rowPage + 1)}>Next rows</button><button className="network-action" disabled={!columnPage} onClick={() => setColumnPage(columnPage - 1)}>Previous columns</button><span>Columns {columnPage * 20 + 1}–{Math.min((columnPage + 1) * 20, names.length)}</span><button className="network-action" disabled={(columnPage + 1) * 20 >= names.length} onClick={() => setColumnPage(columnPage + 1)}>Next columns</button></div></div>}
-    <div className="panel matrix-scroll">{names.length ? <table className="matrix"><thead><tr><th>From section ↓ &nbsp; To section →</th>{columnNames.map((name) => <th key={name}>{name}</th>)}</tr></thead><tbody>{rowNames.map((from) => <tr key={from}><td>{from}</td>{columnNames.map((to) => { const value = counts.get(`${from}|${to}`) ?? 0; return <td key={to}>{value ? <span className="matrix-cell" data-testid={`matrix-${encodeURIComponent(from)}-${encodeURIComponent(to)}`}>{value}</span> : <span style={{ color: '#D1D1D1' }}>·</span>}</td>; })}</tr>)}</tbody></table> : <EmptyState title="No sections to compare" body="No matching page sections in this capture." />}</div>
+    {allNames.length > 20 && <div className="graph-expansion">
+      <div className="matrix-filters">
+        <label className="page-search">Filter rows (from section)<input type="search" value={rowSearch} onChange={event => { setRowSearch(event.target.value); setRowPage(0); }} /></label>
+        <label className="page-search">Filter columns (to section)<input type="search" value={columnSearch} onChange={event => { setColumnSearch(event.target.value); setColumnPage(0); }} /></label>
+      </div>
+      <div className="graph-expansion-actions">
+        <button className="network-action" disabled={!rowPage} onClick={() => setRowPage(rowPage - 1)}>Previous rows</button>
+        <span>Rows {rowMatches.length ? rowPage * 20 + 1 : 0}–{Math.min((rowPage + 1) * 20, rowMatches.length)} of {rowMatches.length}</span>
+        <button className="network-action" disabled={(rowPage + 1) * 20 >= rowMatches.length} onClick={() => setRowPage(rowPage + 1)}>Next rows</button>
+        <button className="network-action" disabled={!columnPage} onClick={() => setColumnPage(columnPage - 1)}>Previous columns</button>
+        <span>Columns {columnMatches.length ? columnPage * 20 + 1 : 0}–{Math.min((columnPage + 1) * 20, columnMatches.length)} of {columnMatches.length}</span>
+        <button className="network-action" disabled={(columnPage + 1) * 20 >= columnMatches.length} onClick={() => setColumnPage(columnPage + 1)}>Next columns</button>
+      </div>
+    </div>}
+    <div className="panel matrix-scroll">{rowMatches.length && columnMatches.length ? <table className="matrix"><thead><tr><th>From section ↓ &nbsp; To section →</th>{columnNames.map((name) => <th key={name}>{name}</th>)}</tr></thead><tbody>{rowNames.map((from) => <tr key={from}><td>{from}</td>{columnNames.map((to) => { const value = counts.get(`${from}|${to}`) ?? 0; return <td key={to}>{value ? <span className="matrix-cell" data-testid={`matrix-${encodeURIComponent(from)}-${encodeURIComponent(to)}`}>{value}</span> : <span style={{ color: '#D1D1D1' }}>·</span>}</td>; })}</tr>)}</tbody></table> : <EmptyState title="No sections to compare" body="No matching page sections in this capture." />}</div>
     <div style={{ color: '#555555', fontSize: 10, lineHeight: 1.55, marginTop: 12 }}>Only contextual links whose source and destination map to captured pages are included. Repeated boilerplate and self-links are excluded.</div>
   </>;
 }
